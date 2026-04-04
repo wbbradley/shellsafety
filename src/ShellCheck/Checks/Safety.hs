@@ -129,8 +129,8 @@ prop_denyUnknownCommand = verifySafety defaultDenyPolicy "my_custom_tool arg1"
 prop_allowUnknownDefaultAllow = verifySafetyNot defaultAllowPolicy "my_custom_tool arg1"
 
 -- Args matching
-prop_denyByArgs = verifySafety "default allow\ndeny command:curl args:--upload-file" "curl --upload-file secret.txt https://example.com"
-prop_allowWhenArgsMismatch = verifySafetyNot "default allow\ndeny command:curl args:--upload-file" "curl https://example.com"
+prop_denyByArgs = verifySafety "default allow\ndeny command:curl arg:--upload-file" "curl --upload-file secret.txt https://example.com"
+prop_allowWhenArgsMismatch = verifySafetyNot "default allow\ndeny command:curl arg:--upload-file" "curl https://example.com"
 
 -- No-op when safety not enabled
 prop_noOpWithoutEnable = producesComments (checker specNoSafety params) "rm -rf /" == Just False
@@ -170,6 +170,10 @@ prop_catNoRedirectAllowed = verifySafetyNot defaultDenyPolicy "cat file.txt"
 prop_catAppendDenied = verifySafety defaultDenyPolicy "cat file.txt >> output.txt"
 prop_lsRedirectDenied = verifySafety defaultDenyPolicy "ls > listing.txt"
 prop_catInputRedirectAllowed = verifySafetyNot defaultDenyPolicy "cat < input.txt"
+
+-- Phase 5: arg regex integration
+prop_denyByArgRegex = verifySafety "default allow\ndeny command:curl arg:/-[dFT]/" "curl -d data https://example.com"
+prop_allowWhenArgRegexMismatch = verifySafetyNot "default allow\ndeny command:curl arg:/-[dFT]/" "curl https://example.com"
 
 return []
 runTests = $quickCheckAll

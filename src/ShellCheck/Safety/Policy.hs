@@ -31,13 +31,31 @@ module ShellCheck.Safety.Policy (
 
 import Data.Char (isSpace, toLower)
 import Data.List (isInfixOf, isPrefixOf)
+import ShellCheck.Regex (matches)
 import ShellCheck.Safety.Effects (Effect(..))
 import Test.QuickCheck
+import Text.Regex.TDFA (Regex, makeRegexM)
 
 data Disposition = Allow | Deny deriving (Eq, Show)
 
-data Matcher = MatchEffect Effect | MatchCommand String | MatchArgs String
-    deriving (Eq, Show)
+data Matcher
+    = MatchEffect Effect
+    | MatchCommand String
+    | MatchArgExact String
+    | MatchArgRegex String Regex
+
+instance Eq Matcher where
+    MatchEffect a    == MatchEffect b    = a == b
+    MatchCommand a   == MatchCommand b   = a == b
+    MatchArgExact a  == MatchArgExact b  = a == b
+    MatchArgRegex a _ == MatchArgRegex b _ = a == b
+    _ == _ = False
+
+instance Show Matcher where
+    show (MatchEffect e)    = "MatchEffect " ++ show e
+    show (MatchCommand c)   = "MatchCommand " ++ show c
+    show (MatchArgExact w)  = "MatchArgExact " ++ show w
+    show (MatchArgRegex p _) = "MatchArgRegex " ++ show p
 
 data Rule = Rule Disposition [Matcher] deriving (Eq, Show)
 
@@ -84,8 +102,20 @@ parseMatcher lineNum token =
         ("effect", ':' : name) -> case parseEffect name of
             Just e -> Right $ MatchEffect e
             Nothing -> Left $ "line " ++ show lineNum ++ ": unknown effect '" ++ name ++ "'"
-        ("args", ':' : pat) -> Right $ MatchArgs pat
+        ("arg", ':' : pat) -> parseArgMatcher lineNum pat
         _ -> Left $ "line " ++ show lineNum ++ ": invalid matcher '" ++ token ++ "'"
+
+parseArgMatcher :: Int -> String -> Either String Matcher
+parseArgMatcher lineNum pat
+    | isRegex pat =
+        let inner = init (tail pat)
+        in case makeRegexM inner of
+            Just re -> Right $ MatchArgRegex inner re
+            Nothing -> Left $ "line " ++ show lineNum
+                ++ ": invalid regex in arg matcher: '" ++ inner ++ "'"
+    | otherwise = Right $ MatchArgExact pat
+  where
+    isRegex s = length s >= 2 && head s == '/' && last s == '/'
 
 parseEffect :: String -> Maybe Effect
 parseEffect s = case map toLower s of
@@ -110,7 +140,8 @@ ruleMatches cmd args effect (Rule _ matchers) = all matchOne matchers
   where
     matchOne (MatchEffect e) = effect == e
     matchOne (MatchCommand c) = cmd == c
-    matchOne (MatchArgs pat) = any (pat `isInfixOf`) args
+    matchOne (MatchArgExact word) = word `elem` args
+    matchOne (MatchArgRegex _ re) = any (`matches` re) args
 
 -- Tests
 
@@ -141,8 +172,8 @@ prop_parseDenyEffect = case parsePolicy "deny effect:executing" of
     _ -> False
 
 prop_parseMultipleMatchers :: Bool
-prop_parseMultipleMatchers = case parsePolicy "deny command:rm args:-rf" of
-    Right p -> policyRules p == [Rule Deny [MatchCommand "rm", MatchArgs "-rf"]]
+prop_parseMultipleMatchers = case parsePolicy "deny command:rm arg:-rf" of
+    Right p -> policyRules p == [Rule Deny [MatchCommand "rm", MatchArgExact "-rf"]]
     _ -> False
 
 prop_parseMultipleRules :: Bool
@@ -190,17 +221,17 @@ prop_evalLastMatchWins =
 
 prop_evalArgsMatcher :: Bool
 prop_evalArgsMatcher =
-    let Right p = parsePolicy "default allow\ndeny command:curl args:--upload-file"
+    let Right p = parsePolicy "default allow\ndeny command:curl arg:--upload-file"
     in evaluate p "curl" ["--upload-file", "secret.txt"] NetworkOut == Deny
 
 prop_evalArgsNoMatch :: Bool
 prop_evalArgsNoMatch =
-    let Right p = parsePolicy "default allow\ndeny command:curl args:--upload-file"
+    let Right p = parsePolicy "default allow\ndeny command:curl arg:--upload-file"
     in evaluate p "curl" ["https://example.com"] NetworkOut == Allow
 
 prop_evalMultiMatcherAllRequired :: Bool
 prop_evalMultiMatcherAllRequired =
-    let Right p = parsePolicy "default allow\ndeny command:rm args:-rf"
+    let Right p = parsePolicy "default allow\ndeny command:rm arg:-rf"
     in evaluate p "rm" ["file.txt"] Mutating == Allow
        && evaluate p "rm" ["-rf", "/"] Mutating == Deny
 
@@ -233,6 +264,59 @@ prop_parseAssumeInvalidNoArgs :: Bool
 prop_parseAssumeInvalidNoArgs = case parsePolicy "assume" of
     Left _ -> True
     _ -> False
+
+-- Phase 5: arg exact matching
+prop_parseArgExact :: Bool
+prop_parseArgExact = case parsePolicy "deny arg:push" of
+    Right p -> case policyRules p of
+        [Rule Deny [MatchArgExact "push"]] -> True
+        _ -> False
+    _ -> False
+
+prop_evalArgExactMatch :: Bool
+prop_evalArgExactMatch =
+    let Right p = parsePolicy "default allow\ndeny arg:push"
+    in evaluate p "git" ["push", "origin"] Mutating == Deny
+
+prop_evalArgExactNoSubstring :: Bool
+prop_evalArgExactNoSubstring =
+    let Right p = parsePolicy "default allow\ndeny arg:rf"
+    in evaluate p "rm" ["-rf"] Mutating == Allow
+
+-- Phase 5: arg regex matching
+prop_parseArgRegex :: Bool
+prop_parseArgRegex = case parsePolicy "deny arg:/^push$/" of
+    Right p -> case policyRules p of
+        [Rule Deny [MatchArgRegex "^push$" _]] -> True
+        _ -> False
+    _ -> False
+
+prop_parseArgRegexInvalid :: Bool
+prop_parseArgRegexInvalid = case parsePolicy "deny arg:/[invalid/" of
+    Left msg -> "line 1" `isInfixOf` msg
+    _ -> False
+
+prop_evalArgRegexMatch :: Bool
+prop_evalArgRegexMatch =
+    let Right p = parsePolicy "default allow\ndeny arg:/^-[dFT]$/"
+    in evaluate p "curl" ["-d", "data"] NetworkOut == Deny
+
+prop_evalArgRegexSubstring :: Bool
+prop_evalArgRegexSubstring =
+    let Right p = parsePolicy "default allow\ndeny arg:/drive/"
+    in evaluate p "cmd" ["--drive=/foo"] Unknown == Deny
+
+prop_evalArgRegexNoMatch :: Bool
+prop_evalArgRegexNoMatch =
+    let Right p = parsePolicy "default allow\ndeny arg:/^push$/"
+    in evaluate p "git" ["pull"] Mutating == Allow
+
+-- Phase 5: command-less rules
+prop_evalCommandlessArgRule :: Bool
+prop_evalCommandlessArgRule =
+    let Right p = parsePolicy "default allow\ndeny arg:/\\.ssh/"
+    in evaluate p "cat" ["/home/user/.ssh/id_rsa"] ReadOnly == Deny
+       && evaluate p "ls" ["/tmp"] ReadOnly == Allow
 
 return []
 runTests = $quickCheckAll
