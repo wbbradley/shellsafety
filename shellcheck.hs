@@ -22,6 +22,7 @@ import           ShellCheck.Checker
 import           ShellCheck.Data
 import           ShellCheck.Interface
 import           ShellCheck.Regex
+import           ShellCheck.Safety.Policy (parsePolicy, policyShell)
 
 import qualified ShellCheck.Formatter.CheckStyle
 import           ShellCheck.Formatter.Format
@@ -403,10 +404,14 @@ parseOption flag options =
         Flag "safety-policy" file -> do
             contents <- liftIO $ readFile file
             let cs = checkSpec options
+            let shellOverride = case parsePolicy contents of
+                    Right p -> policyShell p >>= shellForExecutable
+                    _ -> Nothing
             return options {
                 checkSpec = cs {
                     csSafetyPolicy = Just contents,
-                    csOptionalChecks = csOptionalChecks cs ++ ["safety"]
+                    csOptionalChecks = csOptionalChecks cs ++ ["safety"],
+                    csShellTypeOverride = csShellTypeOverride cs `mplus` shellOverride
                 }
             }
 

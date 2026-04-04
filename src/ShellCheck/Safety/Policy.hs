@@ -43,14 +43,15 @@ data Rule = Rule Disposition [Matcher] deriving (Eq, Show)
 
 data Policy = Policy {
     policyDefault :: Disposition,
-    policyRules :: [Rule]
+    policyRules :: [Rule],
+    policyShell :: Maybe String
 } deriving (Eq, Show)
 
 parsePolicy :: String -> Either String Policy
 parsePolicy input = do
     let numbered = zip [1..] (lines input)
     let nonEmpty = filter (not . isBlankOrComment . snd) numbered
-    foldl (\acc item -> acc >>= \p -> parseLine p item) (Right (Policy Deny [])) nonEmpty
+    foldl (\acc item -> acc >>= \p -> parseLine p item) (Right (Policy Deny [] Nothing)) nonEmpty
   where
     isBlankOrComment s = all isSpace s || "#" `isPrefixOf` dropWhile isSpace s
 
@@ -60,7 +61,9 @@ parseLine policy (lineNum, line) =
         ("default" : rest) -> parseDefault policy lineNum rest
         ("allow" : rest) -> parseRule policy lineNum Allow rest
         ("deny" : rest) -> parseRule policy lineNum Deny rest
-        _ -> Left $ "line " ++ show lineNum ++ ": expected 'default', 'allow', or 'deny'"
+        ["assume", shell] -> Right policy { policyShell = Just (map toLower shell) }
+        ("assume" : _) -> Left $ "line " ++ show lineNum ++ ": expected 'assume <shell>' (e.g. 'assume bash')"
+        _ -> Left $ "line " ++ show lineNum ++ ": expected 'default', 'allow', 'deny', or 'assume'"
 
 parseDefault :: Policy -> Int -> [String] -> Either String Policy
 parseDefault policy lineNum ws =
@@ -112,10 +115,10 @@ ruleMatches cmd args effect (Rule _ matchers) = all matchOne matchers
 -- Tests
 
 prop_parseEmpty :: Bool
-prop_parseEmpty = parsePolicy "" == Right (Policy Deny [])
+prop_parseEmpty = parsePolicy "" == Right (Policy Deny [] Nothing)
 
 prop_parseComments :: Bool
-prop_parseComments = parsePolicy "# this is a comment\n  # indented comment\n" == Right (Policy Deny [])
+prop_parseComments = parsePolicy "# this is a comment\n  # indented comment\n" == Right (Policy Deny [] Nothing)
 
 prop_parseDefaultAllow :: Bool
 prop_parseDefaultAllow = case parsePolicy "default allow" of
@@ -159,11 +162,11 @@ prop_parseInvalidEffect = case parsePolicy "deny effect:bogus" of
 
 prop_evalDefaultDeny :: Bool
 prop_evalDefaultDeny =
-    evaluate (Policy Deny []) "foo" [] Unknown == Deny
+    evaluate (Policy Deny [] Nothing) "foo" [] Unknown == Deny
 
 prop_evalDefaultAllow :: Bool
 prop_evalDefaultAllow =
-    evaluate (Policy Allow []) "foo" [] Unknown == Allow
+    evaluate (Policy Allow [] Nothing) "foo" [] Unknown == Allow
 
 prop_evalAllowByEffect :: Bool
 prop_evalAllowByEffect =
@@ -205,6 +208,31 @@ prop_evalEffectNameCase :: Bool
 prop_evalEffectNameCase =
     let Right p = parsePolicy "allow effect:ReadOnly"
     in evaluate p "cat" [] ReadOnly == Allow
+
+prop_parseAssumeBash :: Bool
+prop_parseAssumeBash = case parsePolicy "assume bash" of
+    Right p -> policyShell p == Just "bash"
+    _ -> False
+
+prop_parseAssumeSh :: Bool
+prop_parseAssumeSh = case parsePolicy "assume sh" of
+    Right p -> policyShell p == Just "sh"
+    _ -> False
+
+prop_parseAssumeCaseInsensitive :: Bool
+prop_parseAssumeCaseInsensitive = case parsePolicy "assume BASH" of
+    Right p -> policyShell p == Just "bash"
+    _ -> False
+
+prop_parseNoAssume :: Bool
+prop_parseNoAssume = case parsePolicy "default deny" of
+    Right p -> policyShell p == Nothing
+    _ -> False
+
+prop_parseAssumeInvalidNoArgs :: Bool
+prop_parseAssumeInvalidNoArgs = case parsePolicy "assume" of
+    Left _ -> True
+    _ -> False
 
 return []
 runTests = $quickCheckAll

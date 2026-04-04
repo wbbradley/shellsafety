@@ -72,7 +72,10 @@ checkSafety policy t = case getCommand t of
             Deny -> case effect of
                 Unknown -> warn scId 4002 $
                     "Unknown command '" ++ cmdName ++ "', denied by default safety policy"
-                _ -> warn scId 4001 $
+                _ | hasRedir && baseEffect < Mutating -> warn scId 4001 $
+                    "Command '" ++ cmdName ++ "' with output redirection classified as "
+                    ++ show effect ++ ", denied by safety policy"
+                  | otherwise -> warn scId 4001 $
                     "Command '" ++ cmdName ++ "' classified as " ++ show effect
                     ++ ", denied by safety policy"
     _ -> return ()
