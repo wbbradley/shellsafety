@@ -1,0 +1,210 @@
+{-
+    Copyright 2024 ShellCheck Contributors
+
+    This file is part of ShellCheck.
+    https://www.shellcheck.net
+
+    ShellCheck is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    ShellCheck is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+-}
+
+{-# LANGUAGE TemplateHaskell #-}
+module ShellCheck.Safety.Policy (
+    Disposition(..),
+    Matcher(..),
+    Rule(..),
+    Policy(..),
+    parsePolicy,
+    evaluate,
+    runTests
+    ) where
+
+import Data.Char (isSpace, toLower)
+import Data.List (isInfixOf, isPrefixOf)
+import ShellCheck.Safety.Effects (Effect(..))
+import Test.QuickCheck
+
+data Disposition = Allow | Deny deriving (Eq, Show)
+
+data Matcher = MatchEffect Effect | MatchCommand String | MatchArgs String
+    deriving (Eq, Show)
+
+data Rule = Rule Disposition [Matcher] deriving (Eq, Show)
+
+data Policy = Policy {
+    policyDefault :: Disposition,
+    policyRules :: [Rule]
+} deriving (Eq, Show)
+
+parsePolicy :: String -> Either String Policy
+parsePolicy input = do
+    let numbered = zip [1..] (lines input)
+    let nonEmpty = filter (not . isBlankOrComment . snd) numbered
+    foldl (\acc item -> acc >>= \p -> parseLine p item) (Right (Policy Deny [])) nonEmpty
+  where
+    isBlankOrComment s = all isSpace s || "#" `isPrefixOf` dropWhile isSpace s
+
+parseLine :: Policy -> (Int, String) -> Either String Policy
+parseLine policy (lineNum, line) =
+    case words line of
+        ("default" : rest) -> parseDefault policy lineNum rest
+        ("allow" : rest) -> parseRule policy lineNum Allow rest
+        ("deny" : rest) -> parseRule policy lineNum Deny rest
+        _ -> Left $ "line " ++ show lineNum ++ ": expected 'default', 'allow', or 'deny'"
+
+parseDefault :: Policy -> Int -> [String] -> Either String Policy
+parseDefault policy lineNum ws =
+    case ws of
+        ["allow"] -> Right policy { policyDefault = Allow }
+        ["deny"] -> Right policy { policyDefault = Deny }
+        _ -> Left $ "line " ++ show lineNum ++ ": expected 'default allow' or 'default deny'"
+
+parseRule :: Policy -> Int -> Disposition -> [String] -> Either String Policy
+parseRule policy lineNum disp tokens = do
+    matchers <- mapM (parseMatcher lineNum) tokens
+    Right policy { policyRules = policyRules policy ++ [Rule disp matchers] }
+
+parseMatcher :: Int -> String -> Either String Matcher
+parseMatcher lineNum token =
+    case break (== ':') token of
+        ("command", ':' : name) -> Right $ MatchCommand name
+        ("effect", ':' : name) -> case parseEffect name of
+            Just e -> Right $ MatchEffect e
+            Nothing -> Left $ "line " ++ show lineNum ++ ": unknown effect '" ++ name ++ "'"
+        ("args", ':' : pat) -> Right $ MatchArgs pat
+        _ -> Left $ "line " ++ show lineNum ++ ": invalid matcher '" ++ token ++ "'"
+
+parseEffect :: String -> Maybe Effect
+parseEffect s = case map toLower s of
+    "readonly" -> Just ReadOnly
+    "mutating" -> Just Mutating
+    "network_out" -> Just NetworkOut
+    "executing" -> Just Executing
+    "unknown" -> Just Unknown
+    _ -> Nothing
+
+evaluate :: Policy -> String -> [String] -> Effect -> Disposition
+evaluate policy cmd args effect =
+    case filter (ruleMatches cmd args effect) (policyRules policy) of
+        [] -> policyDefault policy
+        rs -> ruleDisposition (last rs)
+
+ruleDisposition :: Rule -> Disposition
+ruleDisposition (Rule d _) = d
+
+ruleMatches :: String -> [String] -> Effect -> Rule -> Bool
+ruleMatches cmd args effect (Rule _ matchers) = all matchOne matchers
+  where
+    matchOne (MatchEffect e) = effect == e
+    matchOne (MatchCommand c) = cmd == c
+    matchOne (MatchArgs pat) = any (pat `isInfixOf`) args
+
+-- Tests
+
+prop_parseEmpty :: Bool
+prop_parseEmpty = parsePolicy "" == Right (Policy Deny [])
+
+prop_parseComments :: Bool
+prop_parseComments = parsePolicy "# this is a comment\n  # indented comment\n" == Right (Policy Deny [])
+
+prop_parseDefaultAllow :: Bool
+prop_parseDefaultAllow = case parsePolicy "default allow" of
+    Right p -> policyDefault p == Allow
+    _ -> False
+
+prop_parseDefaultDeny :: Bool
+prop_parseDefaultDeny = case parsePolicy "default deny" of
+    Right p -> policyDefault p == Deny
+    _ -> False
+
+prop_parseAllowCommand :: Bool
+prop_parseAllowCommand = case parsePolicy "allow command:ls" of
+    Right p -> policyRules p == [Rule Allow [MatchCommand "ls"]]
+    _ -> False
+
+prop_parseDenyEffect :: Bool
+prop_parseDenyEffect = case parsePolicy "deny effect:executing" of
+    Right p -> policyRules p == [Rule Deny [MatchEffect Executing]]
+    _ -> False
+
+prop_parseMultipleMatchers :: Bool
+prop_parseMultipleMatchers = case parsePolicy "deny command:rm args:-rf" of
+    Right p -> policyRules p == [Rule Deny [MatchCommand "rm", MatchArgs "-rf"]]
+    _ -> False
+
+prop_parseMultipleRules :: Bool
+prop_parseMultipleRules = case parsePolicy "allow effect:readonly\ndeny command:rm" of
+    Right p -> policyRules p == [Rule Allow [MatchEffect ReadOnly], Rule Deny [MatchCommand "rm"]]
+    _ -> False
+
+prop_parseInvalidLine :: Bool
+prop_parseInvalidLine = case parsePolicy "gibberish nonsense" of
+    Left msg -> "line 1" `isInfixOf` msg
+    _ -> False
+
+prop_parseInvalidEffect :: Bool
+prop_parseInvalidEffect = case parsePolicy "deny effect:bogus" of
+    Left msg -> "line 1" `isInfixOf` msg
+    _ -> False
+
+prop_evalDefaultDeny :: Bool
+prop_evalDefaultDeny =
+    evaluate (Policy Deny []) "foo" [] Unknown == Deny
+
+prop_evalDefaultAllow :: Bool
+prop_evalDefaultAllow =
+    evaluate (Policy Allow []) "foo" [] Unknown == Allow
+
+prop_evalAllowByEffect :: Bool
+prop_evalAllowByEffect =
+    let Right p = parsePolicy "default deny\nallow effect:readonly"
+    in evaluate p "cat" [] ReadOnly == Allow
+
+prop_evalDenyByCommand :: Bool
+prop_evalDenyByCommand =
+    let Right p = parsePolicy "default allow\ndeny command:rm"
+    in evaluate p "rm" [] Mutating == Deny
+
+prop_evalAllowByCommand :: Bool
+prop_evalAllowByCommand =
+    let Right p = parsePolicy "default deny\nallow command:git"
+    in evaluate p "git" [] Mutating == Allow
+
+prop_evalLastMatchWins :: Bool
+prop_evalLastMatchWins =
+    let Right p = parsePolicy "allow command:rm\ndeny command:rm"
+    in evaluate p "rm" [] Mutating == Deny
+
+prop_evalArgsMatcher :: Bool
+prop_evalArgsMatcher =
+    let Right p = parsePolicy "default allow\ndeny command:curl args:--upload-file"
+    in evaluate p "curl" ["--upload-file", "secret.txt"] NetworkOut == Deny
+
+prop_evalArgsNoMatch :: Bool
+prop_evalArgsNoMatch =
+    let Right p = parsePolicy "default allow\ndeny command:curl args:--upload-file"
+    in evaluate p "curl" ["https://example.com"] NetworkOut == Allow
+
+prop_evalMultiMatcherAllRequired :: Bool
+prop_evalMultiMatcherAllRequired =
+    let Right p = parsePolicy "default allow\ndeny command:rm args:-rf"
+    in evaluate p "rm" ["file.txt"] Mutating == Allow
+       && evaluate p "rm" ["-rf", "/"] Mutating == Deny
+
+prop_evalEffectNameCase :: Bool
+prop_evalEffectNameCase =
+    let Right p = parsePolicy "allow effect:ReadOnly"
+    in evaluate p "cat" [] ReadOnly == Allow
+
+return []
+runTests = $quickCheckAll

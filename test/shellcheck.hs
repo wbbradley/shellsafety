@@ -16,6 +16,7 @@ import qualified ShellCheck.Fixer
 import qualified ShellCheck.Formatter.Diff
 import qualified ShellCheck.Parser
 import qualified ShellCheck.Safety.Effects
+import qualified ShellCheck.Safety.Policy
 
 main = do
     putStrLn "Running ShellCheck tests..."
@@ -40,4 +41,5 @@ main = do
       , ("Formatter.Diff"     , ShellCheck.Formatter.Diff.runTests)
       , ("Parser"             , ShellCheck.Parser.runTests)
       , ("Safety.Effects"     , ShellCheck.Safety.Effects.runTests)
+      , ("Safety.Policy"      , ShellCheck.Safety.Policy.runTests)
       ]
