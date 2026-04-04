@@ -74,7 +74,7 @@ mutatingCommands = map (\c -> (c, Mutating))
     , "ln", "mkdir", "mkfifo", "mknod", "mktemp", "mv", "patch"
     , "rm", "rmdir", "shred", "split", "sync", "touch", "truncate"
     -- Editors / in-place tools (conservative: sed -i, sort -o possible)
-    , "sed", "sort"
+    , "sed", "sort", "tee"
     -- Process/user/system mutation
     , "chroot", "kill", "killall", "mount", "nice", "nohup", "pkill"
     , "renice", "umount", "useradd", "userdel", "usermod"
@@ -114,9 +114,53 @@ allPairs = readOnlyCommands ++ mutatingCommands ++ networkOutCommands ++ executi
 builtinEffects :: EffectDB
 builtinEffects = M.fromList allPairs
 
--- | Classify a command by its basename. Arguments are ignored in Phase 1.
+-- | Classify a command by its basename and arguments.
 classifyCommand :: String -> [String] -> Effect
-classifyCommand cmd _args = M.findWithDefault Unknown cmd builtinEffects
+classifyCommand "git"  args = classifyGit args
+classifyCommand "curl" args = classifyCurl args
+classifyCommand "find" args = classifyFind args
+classifyCommand cmd    _    = M.findWithDefault Unknown cmd builtinEffects
+
+classifyGit :: [String] -> Effect
+classifyGit [] = Mutating
+classifyGit (sub:_)
+    | sub `elem` gitReadOnlySubs = ReadOnly
+    | sub `elem` gitNetworkSubs  = NetworkOut
+    | otherwise                  = Mutating
+
+gitReadOnlySubs :: [String]
+gitReadOnlySubs =
+    [ "log", "status", "diff", "show", "branch", "tag", "describe"
+    , "shortlog", "rev-parse", "rev-list", "ls-files", "ls-tree"
+    , "cat-file", "name-rev", "blame", "grep"
+    ]
+
+gitNetworkSubs :: [String]
+gitNetworkSubs = ["push", "fetch", "pull", "clone"]
+
+classifyCurl :: [String] -> Effect
+classifyCurl [] = NetworkOut
+classifyCurl args
+    | hasUploadFlags args = NetworkOut
+    | otherwise = ReadOnly
+  where
+    hasUploadFlags = any isUpload
+    isUpload a = a `elem`
+        [ "-d", "--data", "--data-raw", "--data-binary", "--data-urlencode"
+        , "-F", "--form", "--form-string"
+        , "-T", "--upload-file"
+        , "-X", "--request"
+        ]
+
+classifyFind :: [String] -> Effect
+classifyFind [] = Executing
+classifyFind args
+    | hasExec   = Executing
+    | hasDelete = Mutating
+    | otherwise = ReadOnly
+  where
+    hasExec   = any (`elem` ["-exec", "-execdir", "-ok", "-okdir"]) args
+    hasDelete = "-delete" `elem` args
 
 -- Tests
 
@@ -135,8 +179,8 @@ prop_classifyExecuting = classifyCommand "sudo" [] == Executing
 prop_classifyUnknown :: Bool
 prop_classifyUnknown = classifyCommand "totally_unknown_cmd_xyz" [] == Unknown
 
-prop_classifyIgnoresArgs :: Bool
-prop_classifyIgnoresArgs =
+prop_classifyIgnoresArgsForSimpleCommands :: Bool
+prop_classifyIgnoresArgsForSimpleCommands =
     classifyCommand "cat" ["file1", "file2"] == classifyCommand "cat" []
 
 prop_effectOrdering :: Bool
@@ -154,6 +198,33 @@ prop_builtinEffectsNoUnknown = all (/= Unknown) (M.elems builtinEffects)
 
 prop_noDuplicateKeys :: Bool
 prop_noDuplicateKeys = M.size builtinEffects == length allPairs
+
+-- Git argument-aware classification
+prop_gitStatusReadOnly = classifyCommand "git" ["status"] == ReadOnly
+prop_gitLogReadOnly = classifyCommand "git" ["log", "--oneline"] == ReadOnly
+prop_gitDiffReadOnly = classifyCommand "git" ["diff"] == ReadOnly
+prop_gitPushNetworkOut = classifyCommand "git" ["push", "origin", "main"] == NetworkOut
+prop_gitFetchNetworkOut = classifyCommand "git" ["fetch"] == NetworkOut
+prop_gitCloneNetworkOut = classifyCommand "git" ["clone", "url"] == NetworkOut
+prop_gitCommitMutating = classifyCommand "git" ["commit", "-m", "msg"] == Mutating
+prop_gitAddMutating = classifyCommand "git" ["add", "."] == Mutating
+prop_gitNoSubMutating = classifyCommand "git" [] == Mutating
+
+-- Curl argument-aware classification
+prop_curlDefaultGetReadOnly = classifyCommand "curl" ["http://example.com"] == ReadOnly
+prop_curlPostNetworkOut = classifyCommand "curl" ["-d", "data", "http://example.com"] == NetworkOut
+prop_curlUploadNetworkOut = classifyCommand "curl" ["-T", "file", "http://example.com"] == NetworkOut
+prop_curlNoArgsNetworkOut = classifyCommand "curl" [] == NetworkOut
+prop_curlFormNetworkOut = classifyCommand "curl" ["-F", "file=@f", "http://example.com"] == NetworkOut
+
+-- Find argument-aware classification
+prop_findSimpleReadOnly = classifyCommand "find" [".", "-name", "*.log"] == ReadOnly
+prop_findDeleteMutating = classifyCommand "find" [".", "-name", "*.tmp", "-delete"] == Mutating
+prop_findExecExecuting = classifyCommand "find" [".", "-exec", "rm", "{}", ";"] == Executing
+prop_findNoArgsExecuting = classifyCommand "find" [] == Executing
+
+-- Tee
+prop_teeMutating = classifyCommand "tee" ["output.log"] == Mutating
 
 return []
 runTests = $quickCheckAll

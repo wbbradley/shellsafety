@@ -56,20 +56,39 @@ checker spec _params
 
 checkSafety :: Policy -> Token -> Analysis
 checkSafety policy t = case getCommand t of
-    Just (T_SimpleCommand _ _ (cmdWord:argWords)) -> do
+    Just sc@(T_SimpleCommand _ _ (cmdWord:argWords)) -> do
+        let scId = getId sc
         let cmdName = fromMaybe "" $ getLiteralString cmdWord
-        let args = mapMaybe getLiteralString argWords
-        let effect = classifyCommand cmdName args
-        let disposition = evaluate policy cmdName args effect
+        let literalArgs = mapMaybe getLiteralString argWords
+        let allLiteral = length literalArgs == length argWords
+        let effectArgs = if allLiteral then literalArgs else []
+        let baseEffect = classifyCommand cmdName effectArgs
+        redirecting <- getClosestCommandM sc
+        let hasRedir = maybe False hasOutputRedirection redirecting
+        let effect = if hasRedir then max baseEffect Mutating else baseEffect
+        let disposition = evaluate policy cmdName literalArgs effect
         case disposition of
             Allow -> return ()
             Deny -> case effect of
-                Unknown -> warn (getId t) 4002 $
+                Unknown -> warn scId 4002 $
                     "Unknown command '" ++ cmdName ++ "', denied by default safety policy"
-                _ -> warn (getId t) 4001 $
+                _ -> warn scId 4001 $
                     "Command '" ++ cmdName ++ "' classified as " ++ show effect
                     ++ ", denied by safety policy"
     _ -> return ()
+
+hasOutputRedirection :: Token -> Bool
+hasOutputRedirection (T_Redirecting _ redirs _) = any isOutputRedir redirs
+hasOutputRedirection _ = False
+
+isOutputRedir :: Token -> Bool
+isOutputRedir (T_FdRedirect _ _ (T_IoFile _ op _)) =
+    case op of
+        T_Greater _  -> True
+        T_DGREAT _   -> True
+        T_CLOBBER _  -> True
+        _            -> False
+isOutputRedir _ = False
 
 -- Custom test helpers that inject a safety policy into the spec
 verifySafety :: String -> String -> Bool
@@ -98,7 +117,7 @@ defaultAllowPolicy = "default allow"
 
 -- SC4001: known command denied by policy
 prop_denyMutatingCommand = verifySafety defaultDenyPolicy "rm file.txt"
-prop_denyNetworkCommand = verifySafety defaultDenyPolicy "curl https://example.com"
+prop_denyNetworkCommand = verifySafety defaultDenyPolicy "curl -d data https://example.com"
 prop_allowReadOnlyCommand = verifySafetyNot defaultDenyPolicy "cat file.txt"
 prop_allowExplicitCommand = verifySafetyNot "default deny\nallow command:git" "git push"
 
@@ -123,6 +142,31 @@ prop_noOpWithoutPolicy = producesComments (checker specNoPol params) "rm -rf /" 
     pr = pScript "rm -rf /"
     specNoPol = (defaultSpec pr) { asOptionalChecks = ["safety"], asSafetyPolicy = Nothing }
     params = makeParameters specNoPol
+
+-- Phase 4: git subcommand classification
+prop_gitLogAllowed = verifySafetyNot defaultDenyPolicy "git log --oneline"
+prop_gitStatusAllowed = verifySafetyNot defaultDenyPolicy "git status"
+prop_gitPushDenied = verifySafety defaultDenyPolicy "git push origin main"
+prop_gitCommitDenied = verifySafety defaultDenyPolicy "git commit -m 'msg'"
+
+-- Phase 4: curl method classification
+prop_curlGetAllowed = verifySafetyNot defaultDenyPolicy "curl https://example.com"
+prop_curlPostDenied = verifySafety defaultDenyPolicy "curl -d data https://example.com"
+
+-- Phase 4: find action classification
+prop_findSimpleAllowed = verifySafetyNot defaultDenyPolicy "find . -name '*.log'"
+prop_findDeleteDenied = verifySafety defaultDenyPolicy "find . -name '*.tmp' -delete"
+prop_findExecDenied = verifySafety defaultDenyPolicy "find . -exec rm {} \\;"
+
+-- Phase 4: tee
+prop_teeDenied = verifySafety defaultDenyPolicy "tee output.log"
+
+-- Phase 4: redirection detection
+prop_echoRedirectDenied = verifySafety defaultDenyPolicy "echo hello > output.txt"
+prop_catNoRedirectAllowed = verifySafetyNot defaultDenyPolicy "cat file.txt"
+prop_catAppendDenied = verifySafety defaultDenyPolicy "cat file.txt >> output.txt"
+prop_lsRedirectDenied = verifySafety defaultDenyPolicy "ls > listing.txt"
+prop_catInputRedirectAllowed = verifySafetyNot defaultDenyPolicy "cat < input.txt"
 
 return []
 runTests = $quickCheckAll
