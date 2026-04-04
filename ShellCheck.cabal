@@ -97,6 +97,7 @@ library
       ShellCheck.Parser
       ShellCheck.Prelude
       ShellCheck.Regex
+      ShellCheck.Safety.Effects
     other-modules:
       Paths_ShellCheck
     default-language: Haskell2010
