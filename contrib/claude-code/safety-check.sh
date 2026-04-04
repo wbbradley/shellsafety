@@ -5,17 +5,22 @@
 # When shellcheck finds safety policy violations, the hook denies the
 # command and returns the violation details so Claude can adjust.
 #
-# Requirements:
+# NOTE: The shellcheck-safety binary is the preferred alternative to
+# this script. It has no external dependencies (no jq required) and
+# handles JSON parsing, policy file discovery, and hook output natively.
+# See the installation instructions below for both options.
+#
+# Requirements for this script:
 #   - shellcheck (with safety policy support) on PATH
 #   - jq
 #   - a safety policy file at ~/.shellsafety (or set SHELLCHECK_SAFETY_POLICY)
 #
-# Installation:
+# Installation (Option A — shellcheck-safety binary, recommended):
 #
-#   1. Build and install shellcheck (with safety support):
+#   1. Build and install:
 #
 #        cabal build --allow-newer
-#        cp "$(cabal list-bin shellcheck --allow-newer)" ~/.local/bin/
+#        cp "$(cabal list-bin shellcheck-safety --allow-newer)" ~/.local/bin/
 #
 #   2. Create a safety policy at ~/.shellsafety:
 #
@@ -23,21 +28,41 @@
 #        default deny
 #        allow effect:readonly
 #
-#      See the shellcheck safety documentation for the full policy DSL.
+#   3. Add the hook to your Claude Code settings. Either globally
+#      (~/.claude/settings.json) or per-project (.claude/settings.local.json):
 #
-#   3. Copy this script somewhere persistent and make it executable:
+#        {
+#          "permissions": { "allow": ["Bash(*)"] },
+#          "hooks": {
+#            "PreToolUse": [{
+#              "matcher": "Bash",
+#              "hooks": [{
+#                "type": "command",
+#                "command": "shellcheck-safety"
+#              }]
+#            }]
+#          }
+#        }
+#
+# Installation (Option B — this shell script):
+#
+#   1. Build and install shellcheck:
+#
+#        cabal build --allow-newer
+#        cp "$(cabal list-bin shellcheck --allow-newer)" ~/.local/bin/
+#
+#   2. Create a safety policy at ~/.shellsafety (same as above).
+#
+#   3. Copy this script and configure the hook:
 #
 #        mkdir -p ~/.claude/hooks
 #        cp contrib/claude-code/safety-check.sh ~/.claude/hooks/
 #        chmod +x ~/.claude/hooks/safety-check.sh
 #
-#   4. Add the hook to your Claude Code settings. Either globally
-#      (~/.claude/settings.json) or per-project (.claude/settings.local.json):
+#      Then add to your Claude Code settings:
 #
 #        {
-#          "permissions": {
-#            "allow": ["Bash(*)"]
-#          },
+#          "permissions": { "allow": ["Bash(*)"] },
 #          "hooks": {
 #            "PreToolUse": [{
 #              "matcher": "Bash",
@@ -49,10 +74,10 @@
 #          }
 #        }
 #
-#      "allow": ["Bash(*)"] lets all Bash commands through the permission
-#      system without prompting. The hook then acts as the sole safety gate:
-#      commands that pass shellcheck run immediately, commands that violate
-#      the policy are denied before execution.
+# In both cases, "allow": ["Bash(*)"] lets all Bash commands through the
+# permission system without prompting. The hook acts as the sole safety
+# gate: commands that pass shellcheck run immediately, commands that
+# violate the policy are denied before execution.
 
 set -euo pipefail
 

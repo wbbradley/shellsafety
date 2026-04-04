@@ -128,6 +128,17 @@ executable shellcheck
     default-language: Haskell2010
     main-is: shellcheck.hs
 
+executable shellcheck-safety
+    build-depends:
+      aeson,
+      base,
+      bytestring,
+      directory,
+      text,
+      ShellCheck
+    default-language: Haskell2010
+    main-is: shellcheck-safety.hs
+
 test-suite test-shellcheck
     type: exitcode-stdio-1.0
     build-depends:
