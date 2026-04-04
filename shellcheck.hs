@@ -117,6 +117,9 @@ options = [
     Option "o" ["enable"]
         (ReqArg (Flag "enable") "check1,check2..")
         "List of optional checks to enable (or 'all')",
+    Option "" ["safety-policy"]
+        (ReqArg (Flag "safety-policy") "FILE")
+        "Load a safety policy file and enable safety checks",
     Option "P" ["source-path"]
         (ReqArg (Flag "source-path") "SOURCEPATHS")
         "Specify path when looking for sourced files (\"SCRIPTDIR\" for script's dir)",
@@ -396,6 +399,16 @@ parseOption flag options =
 
         -- This flag is handled specially in 'process'
         Flag "format" _ -> return options
+
+        Flag "safety-policy" file -> do
+            contents <- liftIO $ readFile file
+            let cs = checkSpec options
+            return options {
+                checkSpec = cs {
+                    csSafetyPolicy = Just contents,
+                    csOptionalChecks = csOptionalChecks cs ++ ["safety"]
+                }
+            }
 
         Flag str _ -> do
             printErr $ "Internal error for --" ++ str ++ ". Please file a bug :("

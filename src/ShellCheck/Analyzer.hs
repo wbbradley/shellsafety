@@ -27,6 +27,7 @@ import Data.Monoid
 import qualified ShellCheck.Checks.Commands
 import qualified ShellCheck.Checks.ControlFlow
 import qualified ShellCheck.Checks.Custom
+import qualified ShellCheck.Checks.Safety
 import qualified ShellCheck.Checks.ShellSupport
 
 
@@ -45,11 +46,13 @@ checkers spec params = mconcat $ map ($ params) [
     ShellCheck.Checks.Commands.checker spec,
     ShellCheck.Checks.ControlFlow.checker spec,
     ShellCheck.Checks.Custom.checker,
+    ShellCheck.Checks.Safety.checker spec,
     ShellCheck.Checks.ShellSupport.checker
     ]
 
 optionalChecks = mconcat $ [
     ShellCheck.Analytics.optionalChecks,
     ShellCheck.Checks.Commands.optionalChecks,
-    ShellCheck.Checks.ControlFlow.optionalChecks
+    ShellCheck.Checks.ControlFlow.optionalChecks,
+    ShellCheck.Checks.Safety.optionalChecks
     ]

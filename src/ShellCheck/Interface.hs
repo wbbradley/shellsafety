@@ -21,11 +21,11 @@
 module ShellCheck.Interface
     (
     SystemInterface(..)
-    , CheckSpec(csFilename, csScript, csCheckSourced, csIncludedWarnings, csExcludedWarnings, csShellTypeOverride, csMinSeverity, csIgnoreRC, csExtendedAnalysis, csOptionalChecks)
+    , CheckSpec(csFilename, csScript, csCheckSourced, csIncludedWarnings, csExcludedWarnings, csShellTypeOverride, csMinSeverity, csIgnoreRC, csExtendedAnalysis, csOptionalChecks, csSafetyPolicy)
     , CheckResult(crFilename, crComments)
     , ParseSpec(psFilename, psScript, psCheckSourced, psIgnoreRC, psShellTypeOverride)
     , ParseResult(prComments, prTokenPositions, prRoot)
-    , AnalysisSpec(asScript, asShellType, asFallbackShell, asExecutionMode, asCheckSourced, asTokenPositions, asExtendedAnalysis, asOptionalChecks)
+    , AnalysisSpec(asScript, asShellType, asFallbackShell, asExecutionMode, asCheckSourced, asTokenPositions, asExtendedAnalysis, asOptionalChecks, asSafetyPolicy)
     , AnalysisResult(arComments)
     , FormatterOptions(foColorOption, foWikiLinkCount)
     , Shell(Ksh, Sh, Bash, Dash, BusyboxSh)
@@ -101,7 +101,8 @@ data CheckSpec = CheckSpec {
     csShellTypeOverride :: Maybe Shell,
     csMinSeverity :: Severity,
     csExtendedAnalysis :: Maybe Bool,
-    csOptionalChecks :: [String]
+    csOptionalChecks :: [String],
+    csSafetyPolicy :: Maybe String
 } deriving (Show, Eq)
 
 data CheckResult = CheckResult {
@@ -126,7 +127,8 @@ emptyCheckSpec = CheckSpec {
     csShellTypeOverride = Nothing,
     csMinSeverity = StyleC,
     csExtendedAnalysis = Nothing,
-    csOptionalChecks = []
+    csOptionalChecks = [],
+    csSafetyPolicy = Nothing
 }
 
 newParseSpec :: ParseSpec
@@ -177,7 +179,8 @@ data AnalysisSpec = AnalysisSpec {
     asCheckSourced :: Bool,
     asOptionalChecks :: [String],
     asExtendedAnalysis :: Maybe Bool,
-    asTokenPositions :: Map.Map Id (Position, Position)
+    asTokenPositions :: Map.Map Id (Position, Position),
+    asSafetyPolicy :: Maybe String
 }
 
 newAnalysisSpec token = AnalysisSpec {
@@ -188,7 +191,8 @@ newAnalysisSpec token = AnalysisSpec {
     asCheckSourced = False,
     asOptionalChecks = [],
     asExtendedAnalysis = Nothing,
-    asTokenPositions = Map.empty
+    asTokenPositions = Map.empty,
+    asSafetyPolicy = Nothing
 }
 
 newtype AnalysisResult = AnalysisResult {

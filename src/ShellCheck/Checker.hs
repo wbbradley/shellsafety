@@ -89,7 +89,8 @@ checkScript sys spec = do
                     asExecutionMode = Executed,
                     asTokenPositions = tokenPositions,
                     asExtendedAnalysis = csExtendedAnalysis spec,
-                    asOptionalChecks = getEnableDirectives root ++ csOptionalChecks spec
+                    asOptionalChecks = getEnableDirectives root ++ csOptionalChecks spec,
+                    asSafetyPolicy = csSafetyPolicy spec
                 } where as = newAnalysisSpec root
         let analysisMessages =
                 maybe []

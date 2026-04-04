@@ -81,6 +81,7 @@ library
       ShellCheck.Checks.Commands
       ShellCheck.Checks.ControlFlow
       ShellCheck.Checks.Custom
+      ShellCheck.Checks.Safety
       ShellCheck.Checks.ShellSupport
       ShellCheck.Data
       ShellCheck.Debug
