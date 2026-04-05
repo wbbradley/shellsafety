@@ -85,13 +85,17 @@ hasOutputRedirection (T_Redirecting _ redirs _) = any isOutputRedir redirs
 hasOutputRedirection _ = False
 
 isOutputRedir :: Token -> Bool
-isOutputRedir (T_FdRedirect _ _ (T_IoFile _ op _)) =
-    case op of
-        T_Greater _  -> True
-        T_DGREAT _   -> True
-        T_CLOBBER _  -> True
-        _            -> False
+isOutputRedir (T_FdRedirect _ _ (T_IoFile _ op file))
+    | not (isDevNull file) =
+        case op of
+            T_Greater _  -> True
+            T_DGREAT _   -> True
+            T_CLOBBER _  -> True
+            _            -> False
 isOutputRedir _ = False
+
+isDevNull :: Token -> Bool
+isDevNull t = getLiteralString t == Just "/dev/null"
 
 -- Custom test helpers that inject a safety policy into the spec
 verifySafety :: String -> String -> Bool
@@ -170,6 +174,9 @@ prop_catNoRedirectAllowed = verifySafetyNot defaultDenyPolicy "cat file.txt"
 prop_catAppendDenied = verifySafety defaultDenyPolicy "cat file.txt >> output.txt"
 prop_lsRedirectDenied = verifySafety defaultDenyPolicy "ls > listing.txt"
 prop_catInputRedirectAllowed = verifySafetyNot defaultDenyPolicy "cat < input.txt"
+prop_stderrToDevNullAllowed = verifySafetyNot defaultDenyPolicy "cat file.txt 2>/dev/null"
+prop_stdoutToDevNullAllowed = verifySafetyNot defaultDenyPolicy "echo hello > /dev/null"
+prop_stderrToFileStillDenied = verifySafety defaultDenyPolicy "cat file.txt 2> errors.log"
 
 -- Phase 5: arg regex integration
 prop_denyByArgRegex = verifySafety "default allow\ndeny command:curl arg:/-[dFT]/" "curl -d data https://example.com"
