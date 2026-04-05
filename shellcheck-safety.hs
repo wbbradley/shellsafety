@@ -66,11 +66,17 @@ main = do
             hPutStrLn stderr "shellcheck-safety: no policy file found, skipping"
             exitSuccess
         Just path -> do
-            policyText <- readFile path
-            input <- BL.getContents
-            case extractCommand input of
-                Nothing -> exitSuccess
-                Just cmd -> check policyText cmd
+            policyResult <- (Right <$> readFile path)
+                `catch` (\e -> return $ Left (show (e :: IOException)))
+            case policyResult of
+                Left err -> do
+                    hPutStrLn stderr $ "shellcheck-safety: failed to read policy: " ++ err
+                    exitSuccess
+                Right policyText -> do
+                    input <- BL.getContents
+                    case extractCommand input of
+                        Nothing -> exitSuccess
+                        Just cmd -> check policyText cmd
 
 findPolicyFile :: IO (Maybe FilePath)
 findPolicyFile = do

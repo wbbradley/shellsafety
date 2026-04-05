@@ -175,5 +175,18 @@ prop_catInputRedirectAllowed = verifySafetyNot defaultDenyPolicy "cat < input.tx
 prop_denyByArgRegex = verifySafety "default allow\ndeny command:curl arg:/-[dFT]/" "curl -d data https://example.com"
 prop_allowWhenArgRegexMismatch = verifySafetyNot "default allow\ndeny command:curl arg:/-[dFT]/" "curl https://example.com"
 
+-- Phase 6: compound construct coverage
+prop_pipelineBothChecked = verifySafety defaultDenyPolicy "cat file.txt | tee output.log"
+prop_pipelineAllowedIfBothSafe = verifySafetyNot defaultDenyPolicy "cat file.txt | grep pattern"
+prop_commandSubstitution = verifySafety defaultDenyPolicy "echo $(rm file.txt)"
+prop_subshell = verifySafety defaultDenyPolicy "(rm file.txt)"
+prop_commandGroup = verifySafety defaultDenyPolicy "{ rm file.txt; }"
+prop_backgroundCommand = verifySafety defaultDenyPolicy "rm file.txt &"
+prop_ifConditionChecked = verifySafety defaultDenyPolicy "if rm file.txt; then echo done; fi"
+prop_whileConditionChecked = verifySafety defaultDenyPolicy "while rm file.txt; do echo loop; done"
+
+-- Phase 6: curl --flag=value integration
+prop_curlDataEqualsIntegration = verifySafety defaultDenyPolicy "curl --data=hello https://example.com"
+
 return []
 runTests = $quickCheckAll

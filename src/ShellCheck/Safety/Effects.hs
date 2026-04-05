@@ -27,6 +27,7 @@ module ShellCheck.Safety.Effects (
     runTests
     ) where
 
+import Data.List (isPrefixOf)
 import qualified Data.Map.Strict as M
 import Test.QuickCheck
 
@@ -141,15 +142,16 @@ gitNetworkSubs = ["push", "fetch", "pull", "clone"]
 classifyCurl :: [String] -> Effect
 classifyCurl [] = NetworkOut
 classifyCurl args
-    | hasUploadFlags args = NetworkOut
+    | any isUpload args = NetworkOut
     | otherwise = ReadOnly
   where
-    hasUploadFlags = any isUpload
-    isUpload a = a `elem`
-        [ "-d", "--data", "--data-raw", "--data-binary", "--data-urlencode"
-        , "-F", "--form", "--form-string"
-        , "-T", "--upload-file"
-        , "-X", "--request"
+    isUpload a = a `elem` shortFlags || any (`isPrefixOf` a) longFlagPrefixes
+    shortFlags = ["-d", "-F", "-T", "-X"]
+    longFlagPrefixes =
+        [ "--data", "--data-raw", "--data-binary", "--data-urlencode"
+        , "--form", "--form-string"
+        , "--upload-file"
+        , "--request"
         ]
 
 classifyFind :: [String] -> Effect
@@ -225,6 +227,12 @@ prop_findNoArgsExecuting = classifyCommand "find" [] == Executing
 
 -- Tee
 prop_teeMutating = classifyCommand "tee" ["output.log"] == Mutating
+
+-- Curl --flag=value syntax
+prop_curlDataEqualsNetworkOut = classifyCommand "curl" ["--data=hello", "http://example.com"] == NetworkOut
+prop_curlFormEqualsNetworkOut = classifyCommand "curl" ["--form=file=@f", "http://example.com"] == NetworkOut
+prop_curlUploadFileEqualsNetworkOut = classifyCommand "curl" ["--upload-file=f", "http://example.com"] == NetworkOut
+prop_curlRequestEqualsNetworkOut = classifyCommand "curl" ["--request=POST", "http://example.com"] == NetworkOut
 
 return []
 runTests = $quickCheckAll

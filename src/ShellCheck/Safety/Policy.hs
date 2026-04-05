@@ -318,5 +318,16 @@ prop_evalCommandlessArgRule =
     in evaluate p "cat" ["/home/user/.ssh/id_rsa"] ReadOnly == Deny
        && evaluate p "ls" ["/tmp"] ReadOnly == Allow
 
+-- Phase 6: edge cases
+prop_evalEffectUnknown :: Bool
+prop_evalEffectUnknown =
+    let Right p = parsePolicy "default deny\nallow effect:unknown"
+    in evaluate p "totally_unknown" [] Unknown == Allow
+
+prop_bareRuleMatchesAll :: Bool
+prop_bareRuleMatchesAll =
+    let Right p = parsePolicy "default allow\ndeny"
+    in evaluate p "anything" ["any", "args"] Mutating == Deny
+
 return []
 runTests = $quickCheckAll
