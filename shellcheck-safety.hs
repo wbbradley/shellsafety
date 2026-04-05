@@ -119,7 +119,8 @@ check policyText cmd = do
             csScript = script,
             csSafetyPolicy = Just policyText,
             csOptionalChecks = ["safety"],
-            csShellTypeOverride = shellOverride
+            csShellTypeOverride = shellOverride,
+            csIncludedWarnings = Just [4001, 4002]
         }
     result <- checkScript (newSystemInterface :: SystemInterface IO) spec
     let comments = crComments result
