@@ -1,15 +1,15 @@
 {-
-    Copyright 2024 ShellCheck Contributors
+    Copyright 2024-2026 Will Bradley
 
-    This file is part of ShellCheck.
-    https://www.shellcheck.net
+    This file is part of ShellSafety.
+    https://github.com/wbbradley/shellcheck
 
-    ShellCheck is free software: you can redistribute it and/or modify
+    ShellSafety is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
 
-    ShellCheck is distributed in the hope that it will be useful,
+    ShellSafety is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.

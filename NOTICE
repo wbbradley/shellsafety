@@ -1,0 +1,16 @@
+ShellSafety
+Copyright 2024-2026 Will Bradley
+
+This software is derived from ShellCheck (https://www.shellcheck.net),
+Copyright 2012-2024 Vidar Holen, licensed under the GNU General Public
+License v3 (GPL-3).
+
+The following files are substantially derived from ShellCheck and retain
+their original copyright headers:
+
+  src/ShellSafety/AST.hs        (Copyright 2012-2019 Vidar Holen)
+  src/ShellSafety/ASTLib.hs     (Copyright 2012-2021 Vidar Holen)
+  src/ShellSafety/Interface.hs  (Copyright 2012-2024 Vidar Holen)
+  src/ShellSafety/Parser.hs     (Copyright 2012-2022 Vidar Holen)
+  src/ShellSafety/Prelude.hs    (Copyright 2022 Vidar Holen)
+  src/ShellSafety/Regex.hs      (Copyright 2012-2019 Vidar Holen)
