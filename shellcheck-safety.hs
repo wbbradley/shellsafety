@@ -44,7 +44,8 @@
 import ShellCheck.Checker
 import ShellCheck.Data
 import ShellCheck.Interface
-import ShellCheck.Safety.Policy (parsePolicy, policyShell)
+import ShellCheck.Safety.Effects (Effect(..), classifyCommand)
+import ShellCheck.Safety.Policy (parsePolicy, policyShell, evaluateWithReason)
 
 import Control.Exception (catch, IOException)
 import Data.Aeson (Value(..), decode)
@@ -60,7 +61,7 @@ import System.Environment (lookupEnv)
 import System.Exit (exitSuccess)
 import System.IO (hPutStrLn, stderr, withFile, IOMode(..), hPutStrLn)
 
-data Outcome = Allowed | Denied String | Skipped String
+data Outcome = Allowed String | Denied String | Skipped String
 
 main :: IO ()
 main = do
@@ -123,7 +124,7 @@ check policyText cmd = do
     result <- checkScript (newSystemInterface :: SystemInterface IO) spec
     let comments = crComments result
     if null comments
-        then return (Allowed, "")
+        then return (Allowed (allowReason policyText cmd), "")
         else do
             let messages = unlines $ map formatComment comments
             return (Denied messages, denyJson messages)
@@ -134,6 +135,18 @@ formatComment pc =
         code = cCode c
         msg = cMessage c
     in "SC" ++ show code ++ ": " ++ msg
+
+allowReason :: String -> String -> String
+allowReason policyText cmd =
+    case parsePolicy policyText of
+        Left _ -> ""
+        Right policy ->
+            let baseName = case words cmd of
+                    [] -> ""
+                    (w:_) -> reverse (takeWhile (/= '/') (reverse w))
+                effect = classifyCommand baseName []
+                (_, reason) = evaluateWithReason policy baseName [] effect
+            in baseName ++ " classified as " ++ show effect ++ ", " ++ reason
 
 denyJson :: String -> String
 denyJson reason =
@@ -159,7 +172,7 @@ logInvocation cmd outcome = do
     now <- getCurrentTime
     let ts = formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S%QZ" now
     let (decision, reason) = case outcome of
-            Allowed      -> ("allow", "")
+            Allowed msg  -> ("allow", msg)
             Denied msg   -> ("deny", msg)
             Skipped msg  -> ("skip", msg)
     let entry = "{" ++ intercalateComma

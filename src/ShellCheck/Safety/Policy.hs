@@ -26,6 +26,7 @@ module ShellCheck.Safety.Policy (
     Policy(..),
     parsePolicy,
     evaluate,
+    evaluateWithReason,
     runTests
     ) where
 
@@ -127,13 +128,25 @@ parseEffect s = case map toLower s of
     _ -> Nothing
 
 evaluate :: Policy -> String -> [String] -> Effect -> Disposition
-evaluate policy cmd args effect =
+evaluate policy cmd args effect = fst (evaluateWithReason policy cmd args effect)
+
+evaluateWithReason :: Policy -> String -> [String] -> Effect -> (Disposition, String)
+evaluateWithReason policy cmd args effect =
     case filter (ruleMatches cmd args effect) (policyRules policy) of
-        [] -> policyDefault policy
-        rs -> ruleDisposition (last rs)
+        [] -> (policyDefault policy, "default " ++ map toLower (show (policyDefault policy)))
+        rs -> (ruleDisposition (last rs), showRule (last rs))
 
 ruleDisposition :: Rule -> Disposition
 ruleDisposition (Rule d _) = d
+
+showRule :: Rule -> String
+showRule (Rule d ms) = map toLower (show d) ++ concatMap (\m -> " " ++ showMatcher m) ms
+
+showMatcher :: Matcher -> String
+showMatcher (MatchEffect e) = "effect:" ++ map toLower (show e)
+showMatcher (MatchCommand c) = "command:" ++ c
+showMatcher (MatchArgExact w) = "arg:" ++ w
+showMatcher (MatchArgRegex p _) = "arg:/" ++ p ++ "/"
 
 ruleMatches :: String -> [String] -> Effect -> Rule -> Bool
 ruleMatches cmd args effect (Rule _ matchers) = all matchOne matchers
