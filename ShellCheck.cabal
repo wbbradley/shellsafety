@@ -98,6 +98,7 @@ library
       ShellCheck.Parser
       ShellCheck.Prelude
       ShellCheck.Regex
+      ShellCheck.Safety.Analysis
       ShellCheck.Safety.Effects
       ShellCheck.Safety.Policy
     other-modules:
