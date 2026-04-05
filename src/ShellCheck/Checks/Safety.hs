@@ -19,46 +19,17 @@
 -}
 
 {-# LANGUAGE TemplateHaskell #-}
-module ShellCheck.Checks.Safety (checker, checkSafety, optionalChecks, ShellCheck.Checks.Safety.runTests) where
+module ShellCheck.Checks.Safety (checkSafety, ShellCheck.Checks.Safety.runTests) where
 
 import ShellCheck.AST
 import ShellCheck.ASTLib
-import ShellCheck.AnalyzerLib (Checker(..), Parameters(parentMap, rootNode))
 import ShellCheck.Interface
 import ShellCheck.Safety.Analysis (SafetyParams(..), SafetyM, warn, info, getClosestCommandM, pScript, runSafetyAnalysis)
 import ShellCheck.Safety.Effects (Effect(..), classifyCommand)
 import ShellCheck.Safety.Policy (Disposition(..), Policy, parsePolicy, evaluate, evaluateWithReason)
 
-import Control.Monad.RWS (evalRWS, ask, tell)
 import Data.Maybe
 import Test.QuickCheck
-
-optionalChecks :: [CheckDescription]
-optionalChecks = [
-    newCheckDescription {
-        cdName = "safety",
-        cdDescription = "Evaluate commands against a safety policy for agentic contexts",
-        cdPositive = "rm -rf /",
-        cdNegative = "echo hello"
-    }
-    ]
-
-checker :: AnalysisSpec -> Parameters -> Checker
-checker spec _params
-    | not safetyEnabled = mempty
-    | otherwise = case policy of
-        Nothing -> mempty
-        Just p -> Checker {
-            perScript = const $ return (),
-            perToken = \t -> do
-                params <- ask
-                let sp = SafetyParams { spParentMap = parentMap params, spRootNode = rootNode params }
-                let ((), comments) = evalRWS (checkSafety p t) sp ()
-                tell comments
-        }
-  where
-    safetyEnabled = "safety" `elem` asOptionalChecks spec || "all" `elem` asOptionalChecks spec
-    policy = asSafetyPolicy spec >>= either (const Nothing) Just . parsePolicy
 
 checkSafety :: Policy -> Token -> SafetyM ()
 checkSafety policy t = case getCommand t of

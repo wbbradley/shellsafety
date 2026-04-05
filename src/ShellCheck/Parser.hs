@@ -26,7 +26,6 @@ module ShellCheck.Parser (parseScript, runTests) where
 
 import ShellCheck.AST
 import ShellCheck.ASTLib hiding (runTests)
-import ShellCheck.Data
 import ShellCheck.Interface
 import ShellCheck.Prelude
 
@@ -52,6 +51,59 @@ import qualified Data.Map.Strict as Map
 import Debug.Trace
 
 import Test.QuickCheck.All (quickCheckAll)
+
+-- Inlined from ShellCheck.Data (module deleted)
+specialVariables :: [String]
+specialVariables = ["-", "$", "?", "!", "#", "@", "*"]
+
+commonCommands :: [String]
+commonCommands = [
+    "admin", "alias", "ar", "asa", "at", "awk", "basename", "batch",
+    "bc", "bg", "break", "c99", "cal", "cat", "cd", "cflow", "chgrp",
+    "chmod", "chown", "cksum", "cmp", "colon", "comm", "command",
+    "compress", "continue", "cp", "crontab", "csplit", "ctags", "cut",
+    "cxref", "date", "dd", "delta", "df", "diff", "dirname", "dot",
+    "du", "echo", "ed", "env", "eval", "ex", "exec", "exit", "expand",
+    "export", "expr", "fc", "fg", "file", "find", "fold", "fuser",
+    "gencat", "get", "getconf", "getopts", "gettext", "grep", "hash",
+    "head", "iconv", "ipcrm", "ipcs", "jobs", "join", "kill", "lex",
+    "link", "ln", "locale", "localedef", "logger", "logname", "lp",
+    "ls", "m4", "mailx", "make", "man", "mesg", "mkdir", "mkfifo",
+    "more", "msgfmt", "mv", "newgrp", "ngettext", "nice", "nl", "nm",
+    "nohup", "od", "paste", "patch", "pathchk", "pax", "pr", "printf",
+    "prs", "ps", "pwd", "read", "readlink", "readonly", "realpath",
+    "renice", "return", "rm", "rmdel", "rmdir", "sact", "sccs", "sed",
+    "set", "sh", "shift", "sleep", "sort", "split", "strings", "strip",
+    "stty", "tabs", "tail", "talk", "tee", "test", "time", "timeout",
+    "times", "touch", "tput", "tr", "trap", "tsort", "tty", "type",
+    "ulimit", "umask", "unalias", "uname", "uncompress", "unexpand",
+    "unget", "uniq", "unlink", "unset", "uucp", "uudecode", "uuencode",
+    "uustat", "uux", "val", "vi", "wait", "wc", "what", "who", "write",
+    "xargs", "xgettext", "yacc", "zcat"
+  ]
+
+binaryTestOps :: [String]
+binaryTestOps = [
+    "-nt", "-ot", "-ef", "==", "!=", "<=", ">=", "-eq", "-ne", "-lt", "-le",
+    "-gt", "-ge", "=~", ">", "<", "=", "\\<", "\\>", "\\<=", "\\>="
+  ]
+
+shellForExecutable :: String -> Maybe Shell
+shellForExecutable name =
+    case name of
+        "sh"    -> return Sh
+        "bash"  -> return Bash
+        "bats"  -> return Bash
+        "busybox"  -> return BusyboxSh
+        "busybox sh"  -> return BusyboxSh
+        "busybox ash"  -> return BusyboxSh
+        "dash"  -> return Dash
+        "ash"   -> return Dash
+        "ksh"   -> return Ksh
+        "ksh88" -> return Ksh
+        "ksh93" -> return Ksh
+        "oksh"  -> return Ksh
+        _ -> Nothing
 
 type SCBase m = Mr.ReaderT (Environment m) (Ms.StateT SystemState m)
 type SCParser m v = ParsecT String UserState (SCBase m) v
