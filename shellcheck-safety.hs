@@ -42,8 +42,7 @@
 --     2. ~/.shellsafety
 
 import ShellCheck.Checks.Safety (checkSafety)
-import ShellCheck.Data (shellForExecutable)
-import ShellCheck.Interface (TokenComment(..), Comment(..), newParseSpec, ParseSpec(..), newSystemInterface, SystemInterface, ParseResult(..))
+import ShellCheck.Interface (TokenComment(..), Comment(..), newParseSpec, ParseSpec(..), newSystemInterface, SystemInterface, ParseResult(..), Shell(..))
 import ShellCheck.Parser (parseScript)
 import ShellCheck.Safety.Analysis (runSafetyM)
 import ShellCheck.Safety.Policy (parsePolicy, policyShell)
@@ -61,6 +60,23 @@ import System.Directory (getHomeDirectory, doesFileExist, getCurrentDirectory)
 import System.Environment (lookupEnv)
 import System.Exit (exitSuccess)
 import System.IO (hPutStrLn, stderr, withFile, IOMode(..), hPutStrLn)
+
+shellForExecutable :: String -> Maybe Shell
+shellForExecutable name =
+    case name of
+        "sh"    -> return Sh
+        "bash"  -> return Bash
+        "bats"  -> return Bash
+        "busybox"    -> return BusyboxSh
+        "busybox sh" -> return BusyboxSh
+        "busybox ash" -> return BusyboxSh
+        "dash"  -> return Dash
+        "ash"   -> return Dash
+        "ksh"   -> return Ksh
+        "ksh88" -> return Ksh
+        "ksh93" -> return Ksh
+        "oksh"  -> return Ksh
+        _ -> Nothing
 
 data Outcome = Allowed String | Denied String | Skipped String
 
