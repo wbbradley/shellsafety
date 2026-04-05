@@ -22,12 +22,12 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE NondecreasingIndentation #-}
-module ShellCheck.Parser (parseScript, runTests) where
+module ShellSafety.Parser (parseScript, runTests) where
 
-import ShellCheck.AST
-import ShellCheck.ASTLib hiding (runTests)
-import ShellCheck.Interface
-import ShellCheck.Prelude
+import ShellSafety.AST
+import ShellSafety.ASTLib hiding (runTests)
+import ShellSafety.Interface
+import ShellSafety.Prelude
 
 import Control.Applicative ((<*), (*>))
 import Control.Monad

@@ -21,7 +21,7 @@
 -- | Claude Code PreToolUse hook binary.
 --
 -- Reads a hook JSON event from stdin, extracts the Bash command,
--- runs it through shellcheck safety analysis, and returns a
+-- runs it through shellsafety analysis, and returns a
 -- deny decision if the command violates the safety policy.
 --
 -- Usage:
@@ -32,20 +32,20 @@
 --       "hooks": {
 --         "PreToolUse": [{
 --           "matcher": "Bash",
---           "hooks": [{ "type": "command", "command": "shellcheck-safety" }]
+--           "hooks": [{ "type": "command", "command": "shellsafety" }]
 --         }]
 --       }
 --     }
 --
 --   Policy file is read from (in order):
---     1. SHELLCHECK_SAFETY_POLICY environment variable
+--     1. SHELLSAFETY_POLICY environment variable (fallback: SHELLCHECK_SAFETY_POLICY)
 --     2. ~/.shellsafety
 
-import ShellCheck.Checks.Safety (checkSafety)
-import ShellCheck.Interface (TokenComment(..), Comment(..), newParseSpec, ParseSpec(..), newSystemInterface, SystemInterface, ParseResult(..), Shell(..))
-import ShellCheck.Parser (parseScript)
-import ShellCheck.Safety.Analysis (runSafetyM)
-import ShellCheck.Safety.Policy (parsePolicy, policyShell)
+import ShellSafety.Checker (checkSafety)
+import ShellSafety.Interface (TokenComment(..), Comment(..), newParseSpec, ParseSpec(..), newSystemInterface, SystemInterface, ParseResult(..), Shell(..))
+import ShellSafety.Parser (parseScript)
+import ShellSafety.Analysis (runSafetyM)
+import ShellSafety.Policy (parsePolicy, policyShell)
 
 import Control.Exception (catch, IOException)
 import Data.Aeson (Value(..), decode)
@@ -87,14 +87,14 @@ main = do
     let cmd = extractCommand input
     (outcome, output) <- case policyPath of
         Nothing -> do
-            hPutStrLn stderr "shellcheck-safety: no policy file found, skipping"
+            hPutStrLn stderr "shellsafety: no policy file found, skipping"
             return (Skipped "no policy file", "")
         Just path -> do
             policyResult <- (Right <$> readFile path)
                 `catch` (\e -> return $ Left (show (e :: IOException)))
             case policyResult of
                 Left err -> do
-                    hPutStrLn stderr $ "shellcheck-safety: failed to read policy: " ++ err
+                    hPutStrLn stderr $ "shellsafety: failed to read policy: " ++ err
                     return (Skipped ("failed to read policy: " ++ err), "")
                 Right policyText -> case cmd of
                     Nothing -> return (Skipped "no command in input", "")
@@ -107,7 +107,10 @@ main = do
 
 findPolicyFile :: IO (Maybe FilePath)
 findPolicyFile = do
-    envPath <- lookupEnv "SHELLCHECK_SAFETY_POLICY"
+    envPath <- lookupEnv "SHELLSAFETY_POLICY"
+    envPath <- case envPath of
+        Just _ -> return envPath
+        Nothing -> lookupEnv "SHELLCHECK_SAFETY_POLICY"
     case envPath of
         Just p -> do
             exists <- doesFileExist p
@@ -130,7 +133,7 @@ check policyText cmd = do
     let script = "#!/bin/bash\n" ++ cmd ++ "\n"
     case parsePolicy policyText of
         Left err -> do
-            hPutStrLn stderr $ "shellcheck-safety: invalid policy: " ++ err
+            hPutStrLn stderr $ "shellsafety: invalid policy: " ++ err
             return (Skipped ("invalid policy: " ++ err), "")
         Right policy -> do
             let shellOverride = policyShell policy >>= shellForExecutable
@@ -197,9 +200,9 @@ logInvocation cmd outcome = do
             , jsonField "decision" decision
             , jsonArray "reasons" reasons
             ] ++ "}"
-    let logPath = home ++ "/shellcheck-safety.log"
+    let logPath = home ++ "/shellsafety.log"
     withFile logPath AppendMode (\h -> hPutStrLn h entry)
-        `catch` (\e -> hPutStrLn stderr $ "shellcheck-safety: log write failed: " ++ show (e :: IOException))
+        `catch` (\e -> hPutStrLn stderr $ "shellsafety: log write failed: " ++ show (e :: IOException))
   where
     toReasons s = filter (not . null) (lines s)
     jsonField k v = jsonString k ++ ":" ++ jsonString v

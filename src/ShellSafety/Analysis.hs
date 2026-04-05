@@ -19,7 +19,7 @@
 -}
 
 {-# LANGUAGE FlexibleContexts #-}
-module ShellCheck.Safety.Analysis
+module ShellSafety.Analysis
     (
     -- * Types
       SafetyParams(..)
@@ -45,10 +45,10 @@ module ShellCheck.Safety.Analysis
     , runSafetyAnalysis
     ) where
 
-import ShellCheck.AST
-import ShellCheck.ASTLib
-import ShellCheck.Interface
-import ShellCheck.Parser
+import ShellSafety.AST
+import ShellSafety.ASTLib
+import ShellSafety.Interface
+import ShellSafety.Parser
 
 import Control.Arrow (first)
 import Control.DeepSeq

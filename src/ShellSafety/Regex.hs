@@ -20,7 +20,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 
 -- Basically Text.Regex based on regex-tdfa instead of the buggy regex-posix.
-module ShellCheck.Regex where
+module ShellSafety.Regex where
 
 import Data.List
 import Data.Maybe

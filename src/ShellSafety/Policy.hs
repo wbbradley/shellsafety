@@ -19,7 +19,7 @@
 -}
 
 {-# LANGUAGE TemplateHaskell #-}
-module ShellCheck.Safety.Policy (
+module ShellSafety.Policy (
     Disposition(..),
     Matcher(..),
     Rule(..),
@@ -32,8 +32,8 @@ module ShellCheck.Safety.Policy (
 
 import Data.Char (isSpace, toLower)
 import Data.List (isInfixOf, isPrefixOf)
-import ShellCheck.Regex (matches)
-import ShellCheck.Safety.Effects (Effect(..))
+import ShellSafety.Regex (matches)
+import ShellSafety.Effects (Effect(..))
 import Test.QuickCheck
 import Text.Regex.TDFA (Regex, makeRegexM)
 

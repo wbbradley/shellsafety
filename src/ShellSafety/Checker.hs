@@ -19,14 +19,14 @@
 -}
 
 {-# LANGUAGE TemplateHaskell #-}
-module ShellCheck.Checks.Safety (checkSafety, ShellCheck.Checks.Safety.runTests) where
+module ShellSafety.Checker (checkSafety, ShellSafety.Checker.runTests) where
 
-import ShellCheck.AST
-import ShellCheck.ASTLib
-import ShellCheck.Interface
-import ShellCheck.Safety.Analysis (SafetyParams(..), SafetyM, warn, info, getClosestCommandM, pScript, runSafetyAnalysis)
-import ShellCheck.Safety.Effects (Effect(..), classifyCommand)
-import ShellCheck.Safety.Policy (Disposition(..), Policy, parsePolicy, evaluate, evaluateWithReason)
+import ShellSafety.AST
+import ShellSafety.ASTLib
+import ShellSafety.Interface
+import ShellSafety.Analysis (SafetyParams(..), SafetyM, warn, info, getClosestCommandM, pScript, runSafetyAnalysis)
+import ShellSafety.Effects (Effect(..), classifyCommand)
+import ShellSafety.Policy (Disposition(..), Policy, parsePolicy, evaluate, evaluateWithReason)
 
 import Data.Maybe
 import Test.QuickCheck

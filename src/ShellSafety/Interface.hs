@@ -18,7 +18,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -}
 {-# LANGUAGE DeriveGeneric, DeriveAnyClass #-}
-module ShellCheck.Interface
+module ShellSafety.Interface
     (
     SystemInterface(..)
     , ParseSpec(psFilename, psScript, psCheckSourced, psIgnoreRC, psShellTypeOverride)
@@ -41,7 +41,7 @@ module ShellCheck.Interface
     , newComment
     ) where
 
-import ShellCheck.AST
+import ShellSafety.AST
 
 import Control.DeepSeq
 import Control.Monad.Identity

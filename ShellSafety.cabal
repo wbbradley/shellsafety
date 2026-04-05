@@ -1,6 +1,6 @@
-Name:             ShellCheck
+Name:             ShellSafety
 Version:          0.11.0
-Synopsis:         Shell script analysis tool
+Synopsis:         Safety gate for AI agent shell command execution
 License:          GPL-3
 License-file:     LICENSE
 Category:         Static Analysis
@@ -35,7 +35,7 @@ Extra-Source-Files:
     -- convenience script for stripping tests
     striptests
     -- tests
-    test/shellcheck.hs
+    test/shellsafety.hs
 
 source-repository head
     type: git
@@ -60,21 +60,21 @@ library
       directory            >= 1.2.3 && < 1.4,
       process
     exposed-modules:
-      ShellCheck.AST
-      ShellCheck.ASTLib
-      ShellCheck.Checks.Safety
-      ShellCheck.Interface
-      ShellCheck.Parser
-      ShellCheck.Prelude
-      ShellCheck.Regex
-      ShellCheck.Safety.Analysis
-      ShellCheck.Safety.Effects
-      ShellCheck.Safety.Policy
+      ShellSafety.AST
+      ShellSafety.ASTLib
+      ShellSafety.Analysis
+      ShellSafety.Checker
+      ShellSafety.Effects
+      ShellSafety.Interface
+      ShellSafety.Parser
+      ShellSafety.Policy
+      ShellSafety.Prelude
+      ShellSafety.Regex
     other-modules:
-      Paths_ShellCheck
+      Paths_ShellSafety
     default-language: Haskell2010
 
-executable shellcheck-safety
+executable shellsafety
     build-depends:
       aeson,
       base,
@@ -82,11 +82,11 @@ executable shellcheck-safety
       directory,
       text,
       time,
-      ShellCheck
+      ShellSafety
     default-language: Haskell2010
-    main-is: shellcheck-safety.hs
+    main-is: shellsafety.hs
 
-test-suite test-shellcheck
+test-suite test-shellsafety
     type: exitcode-stdio-1.0
     build-depends:
       aeson,
@@ -100,6 +100,6 @@ test-suite test-shellcheck
       QuickCheck,
       regex-tdfa,
       transformers,
-      ShellCheck
+      ShellSafety
     default-language: Haskell2010
-    main-is: test/shellcheck.hs
+    main-is: test/shellsafety.hs

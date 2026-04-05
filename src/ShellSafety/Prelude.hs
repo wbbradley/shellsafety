@@ -19,7 +19,7 @@
 -}
 
 -- Generic basic utility functions
-module ShellCheck.Prelude where
+module ShellSafety.Prelude where
 
 import Data.Semigroup
 
@@ -48,4 +48,4 @@ sconcatOrDefault def [] = def
 sconcatOrDefault _ list = sconcat1 list
 
 -- For more actionable "impossible" errors
-pleaseReport str = "ShellCheck internal error, please report: " ++ str
+pleaseReport str = "ShellSafety internal error, please report: " ++ str

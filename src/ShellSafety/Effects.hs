@@ -19,7 +19,7 @@
 -}
 
 {-# LANGUAGE TemplateHaskell #-}
-module ShellCheck.Safety.Effects (
+module ShellSafety.Effects (
     Effect(..),
     EffectDB,
     builtinEffects,

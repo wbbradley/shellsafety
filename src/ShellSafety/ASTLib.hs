@@ -18,11 +18,11 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -}
 {-# LANGUAGE TemplateHaskell #-}
-module ShellCheck.ASTLib where
+module ShellSafety.ASTLib where
 
-import ShellCheck.AST
-import ShellCheck.Prelude
-import ShellCheck.Regex
+import ShellSafety.AST
+import ShellSafety.Prelude
+import ShellSafety.Regex
 
 import Control.Monad.Writer
 import Control.Monad
