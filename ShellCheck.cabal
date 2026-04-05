@@ -135,6 +135,7 @@ executable shellcheck-safety
       bytestring,
       directory,
       text,
+      time,
       ShellCheck
     default-language: Haskell2010
     main-is: shellcheck-safety.hs

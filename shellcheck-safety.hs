@@ -53,30 +53,39 @@ import qualified Data.Aeson.KeyMap as KM
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text as T
 import Data.Maybe (fromMaybe)
-import System.Directory (getHomeDirectory, doesFileExist)
+import Data.Time.Format (formatTime, defaultTimeLocale)
+import Data.Time.Clock (getCurrentTime)
+import System.Directory (getHomeDirectory, doesFileExist, getCurrentDirectory)
 import System.Environment (lookupEnv)
 import System.Exit (exitSuccess)
-import System.IO (hPutStrLn, stderr)
+import System.IO (hPutStrLn, stderr, withFile, IOMode(..), hPutStrLn)
+
+data Outcome = Allowed | Denied String | Skipped String
 
 main :: IO ()
 main = do
     policyPath <- findPolicyFile
-    case policyPath of
+    input <- BL.getContents
+    let cmd = extractCommand input
+    (outcome, output) <- case policyPath of
         Nothing -> do
             hPutStrLn stderr "shellcheck-safety: no policy file found, skipping"
-            exitSuccess
+            return (Skipped "no policy file", "")
         Just path -> do
             policyResult <- (Right <$> readFile path)
                 `catch` (\e -> return $ Left (show (e :: IOException)))
             case policyResult of
                 Left err -> do
                     hPutStrLn stderr $ "shellcheck-safety: failed to read policy: " ++ err
-                    exitSuccess
-                Right policyText -> do
-                    input <- BL.getContents
-                    case extractCommand input of
-                        Nothing -> exitSuccess
-                        Just cmd -> check policyText cmd
+                    return (Skipped ("failed to read policy: " ++ err), "")
+                Right policyText -> case cmd of
+                    Nothing -> return (Skipped "no command in input", "")
+                    Just c -> check policyText c
+    logInvocation cmd outcome
+    case output of
+        "" -> return ()
+        s  -> putStr s
+    exitSuccess
 
 findPolicyFile :: IO (Maybe FilePath)
 findPolicyFile = do
@@ -98,7 +107,7 @@ extractCommand input = do
     String cmd <- KM.lookup (Key.fromString "command") toolInput
     return $ T.unpack cmd
 
-check :: String -> String -> IO ()
+check :: String -> String -> IO (Outcome, String)
 check policyText cmd = do
     let script = "#!/bin/bash\n" ++ cmd ++ "\n"
     let shellOverride = case parsePolicy policyText of
@@ -114,10 +123,10 @@ check policyText cmd = do
     result <- checkScript (newSystemInterface :: SystemInterface IO) spec
     let comments = crComments result
     if null comments
-        then exitSuccess
+        then return (Allowed, "")
         else do
             let messages = unlines $ map formatComment comments
-            putStr $ denyJson messages
+            return (Denied messages, denyJson messages)
 
 formatComment :: PositionedComment -> String
 formatComment pc =
@@ -142,3 +151,29 @@ jsonString s = "\"" ++ concatMap escape s ++ "\""
     escape '\r' = "\\r"
     escape '\t' = "\\t"
     escape c    = [c]
+
+logInvocation :: Maybe String -> Outcome -> IO ()
+logInvocation cmd outcome = do
+    home <- getHomeDirectory
+    cwd <- getCurrentDirectory
+    now <- getCurrentTime
+    let ts = formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S%QZ" now
+    let (decision, reason) = case outcome of
+            Allowed      -> ("allow", "")
+            Denied msg   -> ("deny", msg)
+            Skipped msg  -> ("skip", msg)
+    let entry = "{" ++ intercalateComma
+            [ jsonField "ts" ts
+            , jsonField "cwd" cwd
+            , jsonField "command" (fromMaybe "" cmd)
+            , jsonField "decision" decision
+            , jsonField "reason" reason
+            ] ++ "}"
+    let logPath = home ++ "/shellcheck-safety.log"
+    withFile logPath AppendMode (\h -> hPutStrLn h entry)
+        `catch` (\e -> hPutStrLn stderr $ "shellcheck-safety: log write failed: " ++ show (e :: IOException))
+  where
+    jsonField k v = jsonString k ++ ":" ++ jsonString v
+    intercalateComma [] = ""
+    intercalateComma [x] = x
+    intercalateComma (x:xs) = x ++ "," ++ intercalateComma xs
