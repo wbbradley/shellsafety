@@ -19,7 +19,7 @@
 -}
 
 {-# LANGUAGE TemplateHaskell #-}
-module ShellCheck.Checks.Safety (checker, optionalChecks, ShellCheck.Checks.Safety.runTests) where
+module ShellCheck.Checks.Safety (checker, checkSafety, optionalChecks, ShellCheck.Checks.Safety.runTests) where
 
 import ShellCheck.AST
 import ShellCheck.ASTLib

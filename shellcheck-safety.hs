@@ -41,9 +41,11 @@
 --     1. SHELLCHECK_SAFETY_POLICY environment variable
 --     2. ~/.shellsafety
 
-import ShellCheck.Checker
-import ShellCheck.Data
-import ShellCheck.Interface
+import ShellCheck.Checks.Safety (checkSafety)
+import ShellCheck.Data (shellForExecutable)
+import ShellCheck.Interface (TokenComment(..), Comment(..), newParseSpec, ParseSpec(..), newSystemInterface, SystemInterface, ParseResult(..))
+import ShellCheck.Parser (parseScript)
+import ShellCheck.Safety.Analysis (runSafetyM)
 import ShellCheck.Safety.Policy (parsePolicy, policyShell)
 
 import Control.Exception (catch, IOException)
@@ -110,34 +112,37 @@ extractCommand input = do
 check :: String -> String -> IO (Outcome, String)
 check policyText cmd = do
     let script = "#!/bin/bash\n" ++ cmd ++ "\n"
-    let shellOverride = case parsePolicy policyText of
-            Right p -> policyShell p >>= shellForExecutable
-            _ -> Nothing
-    let spec = emptyCheckSpec {
-            csFilename = "-",
-            csScript = script,
-            csSafetyPolicy = Just policyText,
-            csOptionalChecks = ["safety"],
-            csShellTypeOverride = shellOverride,
-            csIncludedWarnings = Just [4000, 4001, 4002]
-        }
-    result <- checkScript (newSystemInterface :: SystemInterface IO) spec
-    let comments = crComments result
-    let denies = filter (isDeny . pcComment) comments
-    let allows = filter (isAllow . pcComment) comments
-    let allowMessages = unlines $ map formatComment allows
-    if null denies
-        then return (Allowed allowMessages, "")
-        else do
-            let denyMessages = unlines $ map formatComment denies
-            return (Denied denyMessages, denyJson denyMessages)
+    case parsePolicy policyText of
+        Left err -> do
+            hPutStrLn stderr $ "shellcheck-safety: invalid policy: " ++ err
+            return (Skipped ("invalid policy: " ++ err), "")
+        Right policy -> do
+            let shellOverride = policyShell policy >>= shellForExecutable
+            let pSpec = newParseSpec {
+                    psFilename = "script",
+                    psScript = script,
+                    psShellTypeOverride = shellOverride
+                }
+            pr <- parseScript (newSystemInterface :: SystemInterface IO) pSpec
+            case prRoot pr of
+                Nothing -> return (Skipped "parse failed", "")
+                Just root -> do
+                    let comments = runSafetyM root (checkSafety policy)
+                    let denies = filter (isDeny . tcComment) comments
+                    let allows = filter (isAllow . tcComment) comments
+                    let allowMessages = unlines $ map formatComment allows
+                    if null denies
+                        then return (Allowed allowMessages, "")
+                        else do
+                            let denyMessages = unlines $ map formatComment denies
+                            return (Denied denyMessages, denyJson denyMessages)
   where
     isDeny c = cCode c `elem` [4001, 4002]
     isAllow c = cCode c == 4000
 
-formatComment :: PositionedComment -> String
-formatComment pc =
-    let c = pcComment pc
+formatComment :: TokenComment -> String
+formatComment tc =
+    let c = tcComment tc
         code = cCode c
         msg = cMessage c
     in "SC" ++ show code ++ ": " ++ msg
