@@ -165,22 +165,24 @@ logInvocation cmd outcome = do
     cwd <- getCurrentDirectory
     now <- getCurrentTime
     let ts = formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S%QZ" now
-    let (decision, reason) = case outcome of
-            Allowed msg  -> ("allow", msg)
-            Denied msg   -> ("deny", msg)
-            Skipped msg  -> ("skip", msg)
+    let (decision, reasons) = case outcome of
+            Allowed msg  -> ("allow", toReasons msg)
+            Denied msg   -> ("deny", toReasons msg)
+            Skipped msg  -> ("skip", [msg])
     let entry = "{" ++ intercalateComma
             [ jsonField "ts" ts
             , jsonField "cwd" cwd
             , jsonField "command" (fromMaybe "" cmd)
             , jsonField "decision" decision
-            , jsonField "reason" reason
+            , jsonArray "reasons" reasons
             ] ++ "}"
     let logPath = home ++ "/shellcheck-safety.log"
     withFile logPath AppendMode (\h -> hPutStrLn h entry)
         `catch` (\e -> hPutStrLn stderr $ "shellcheck-safety: log write failed: " ++ show (e :: IOException))
   where
+    toReasons s = filter (not . null) (lines s)
     jsonField k v = jsonString k ++ ":" ++ jsonString v
+    jsonArray k vs = jsonString k ++ ":[" ++ intercalateComma (map jsonString vs) ++ "]"
     intercalateComma [] = ""
     intercalateComma [x] = x
     intercalateComma (x:xs) = x ++ "," ++ intercalateComma xs
