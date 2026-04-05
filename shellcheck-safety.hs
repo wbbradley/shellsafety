@@ -44,8 +44,7 @@
 import ShellCheck.Checker
 import ShellCheck.Data
 import ShellCheck.Interface
-import ShellCheck.Safety.Effects (Effect(..), classifyCommand)
-import ShellCheck.Safety.Policy (parsePolicy, policyShell, evaluateWithReason)
+import ShellCheck.Safety.Policy (parsePolicy, policyShell)
 
 import Control.Exception (catch, IOException)
 import Data.Aeson (Value(..), decode)
@@ -120,15 +119,21 @@ check policyText cmd = do
             csSafetyPolicy = Just policyText,
             csOptionalChecks = ["safety"],
             csShellTypeOverride = shellOverride,
-            csIncludedWarnings = Just [4001, 4002]
+            csIncludedWarnings = Just [4000, 4001, 4002]
         }
     result <- checkScript (newSystemInterface :: SystemInterface IO) spec
     let comments = crComments result
-    if null comments
-        then return (Allowed (allowReason policyText cmd), "")
+    let denies = filter (isDeny . pcComment) comments
+    let allows = filter (isAllow . pcComment) comments
+    let allowMessages = unlines $ map formatComment allows
+    if null denies
+        then return (Allowed allowMessages, "")
         else do
-            let messages = unlines $ map formatComment comments
-            return (Denied messages, denyJson messages)
+            let denyMessages = unlines $ map formatComment denies
+            return (Denied denyMessages, denyJson denyMessages)
+  where
+    isDeny c = cCode c `elem` [4001, 4002]
+    isAllow c = cCode c == 4000
 
 formatComment :: PositionedComment -> String
 formatComment pc =
@@ -136,18 +141,6 @@ formatComment pc =
         code = cCode c
         msg = cMessage c
     in "SC" ++ show code ++ ": " ++ msg
-
-allowReason :: String -> String -> String
-allowReason policyText cmd =
-    case parsePolicy policyText of
-        Left _ -> ""
-        Right policy ->
-            let baseName = case words cmd of
-                    [] -> ""
-                    (w:_) -> reverse (takeWhile (/= '/') (reverse w))
-                effect = classifyCommand baseName []
-                (_, reason) = evaluateWithReason policy baseName [] effect
-            in baseName ++ " classified as " ++ show effect ++ ", " ++ reason
 
 denyJson :: String -> String
 denyJson reason =

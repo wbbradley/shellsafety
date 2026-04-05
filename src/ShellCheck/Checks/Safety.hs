@@ -26,7 +26,7 @@ import ShellCheck.ASTLib
 import ShellCheck.AnalyzerLib
 import ShellCheck.Interface
 import ShellCheck.Safety.Effects (Effect(..), classifyCommand)
-import ShellCheck.Safety.Policy (Disposition(..), Policy, parsePolicy, evaluate)
+import ShellCheck.Safety.Policy (Disposition(..), Policy, parsePolicy, evaluate, evaluateWithReason)
 
 import Data.Maybe
 import Test.QuickCheck
@@ -66,9 +66,11 @@ checkSafety policy t = case getCommand t of
         redirecting <- getClosestCommandM sc
         let hasRedir = maybe False hasOutputRedirection redirecting
         let effect = if hasRedir then max baseEffect Mutating else baseEffect
-        let disposition = evaluate policy cmdName literalArgs effect
+        let (disposition, reason) = evaluateWithReason policy cmdName literalArgs effect
         case disposition of
-            Allow -> return ()
+            Allow -> info scId 4000 $
+                "Command '" ++ cmdName ++ "' classified as " ++ show effect
+                ++ ", allowed by safety policy (" ++ reason ++ ")"
             Deny -> case effect of
                 Unknown -> warn scId 4002 $
                     "Unknown command '" ++ cmdName ++ "', denied by default safety policy"
@@ -114,7 +116,8 @@ producesCommentsSafety policyText s = do
         }
     let params = makeParameters spec
     let c = checker spec params
-    return . not . null $ filterByAnnotation spec params $ runChecker params c
+    let comments = filterByAnnotation spec params $ runChecker params c
+    return . not . null $ filter (\tc -> cCode (tcComment tc) /= 4000) comments
 
 defaultDenyPolicy :: String
 defaultDenyPolicy = "default deny\nallow effect:readonly"
