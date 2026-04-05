@@ -42,7 +42,6 @@ module ShellCheck.Safety.Analysis
 
     -- * Test helpers
     , pScript
-    , defaultSafetySpec
     , runSafetyAnalysis
     ) where
 
@@ -58,7 +57,6 @@ import Control.Monad.Identity
 import Control.Monad.RWS
 import Control.Monad.State
 import Control.Monad.Writer
-import Data.Maybe
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map
 
@@ -162,15 +160,6 @@ pScript :: String -> ParseResult
 pScript s =
     let pSpec = newParseSpec { psFilename = "script", psScript = s }
     in runIdentity $ parseScript (mockedSystemInterface []) pSpec
-
--- | Minimal AnalysisSpec from a ParseResult (for compatibility during transition).
-defaultSafetySpec :: ParseResult -> AnalysisSpec
-defaultSafetySpec pr = spec {
-    asShellType = Nothing,
-    asCheckSourced = False,
-    asExecutionMode = Executed,
-    asTokenPositions = prTokenPositions pr
-} where spec = newAnalysisSpec (fromJust $ prRoot pr)
 
 -- | Parse a script and run a safety check over it. Returns Nothing if parse
 -- fails, otherwise Just the list of comments.
