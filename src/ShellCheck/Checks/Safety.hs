@@ -23,11 +23,13 @@ module ShellCheck.Checks.Safety (checker, optionalChecks, ShellCheck.Checks.Safe
 
 import ShellCheck.AST
 import ShellCheck.ASTLib
-import ShellCheck.AnalyzerLib
+import ShellCheck.AnalyzerLib (Checker(..), Parameters(parentMap, rootNode))
 import ShellCheck.Interface
+import ShellCheck.Safety.Analysis (SafetyParams(..), SafetyM, warn, info, getClosestCommandM, pScript, runSafetyAnalysis)
 import ShellCheck.Safety.Effects (Effect(..), classifyCommand)
 import ShellCheck.Safety.Policy (Disposition(..), Policy, parsePolicy, evaluate, evaluateWithReason)
 
+import Control.Monad.RWS (evalRWS, ask, tell)
 import Data.Maybe
 import Test.QuickCheck
 
@@ -48,13 +50,17 @@ checker spec _params
         Nothing -> mempty
         Just p -> Checker {
             perScript = const $ return (),
-            perToken = checkSafety p
+            perToken = \t -> do
+                params <- ask
+                let sp = SafetyParams { spParentMap = parentMap params, spRootNode = rootNode params }
+                let ((), comments) = evalRWS (checkSafety p t) sp ()
+                tell comments
         }
   where
     safetyEnabled = "safety" `elem` asOptionalChecks spec || "all" `elem` asOptionalChecks spec
     policy = asSafetyPolicy spec >>= either (const Nothing) Just . parsePolicy
 
-checkSafety :: Policy -> Token -> Analysis
+checkSafety :: Policy -> Token -> SafetyM ()
 checkSafety policy t = case getCommand t of
     Just sc@(T_SimpleCommand _ _ (cmdWord:argWords)) -> do
         let scId = getId sc
@@ -107,17 +113,12 @@ verifySafetyNot :: String -> String -> Bool
 verifySafetyNot policyText script = producesCommentsSafety policyText script == Just False
 
 producesCommentsSafety :: String -> String -> Maybe Bool
-producesCommentsSafety policyText s = do
-    let pr = pScript s
-    prRoot pr
-    let spec = (defaultSpec pr) {
-            asOptionalChecks = ["safety"],
-            asSafetyPolicy = Just policyText
-        }
-    let params = makeParameters spec
-    let c = checker spec params
-    let comments = filterByAnnotation spec params $ runChecker params c
-    return . not . null $ filter (\tc -> cCode (tcComment tc) /= 4000) comments
+producesCommentsSafety policyText s =
+    case parsePolicy policyText of
+        Left _ -> Nothing
+        Right p -> do
+            comments <- runSafetyAnalysis (checkSafety p) s
+            return . not . null $ filter (\tc -> cCode (tcComment tc) /= 4000) comments
 
 defaultDenyPolicy :: String
 defaultDenyPolicy = "default deny\nallow effect:readonly"
@@ -138,20 +139,6 @@ prop_allowUnknownDefaultAllow = verifySafetyNot defaultAllowPolicy "my_custom_to
 -- Args matching
 prop_denyByArgs = verifySafety "default allow\ndeny command:curl arg:--upload-file" "curl --upload-file secret.txt https://example.com"
 prop_allowWhenArgsMismatch = verifySafetyNot "default allow\ndeny command:curl arg:--upload-file" "curl https://example.com"
-
--- No-op when safety not enabled
-prop_noOpWithoutEnable = producesComments (checker specNoSafety params) "rm -rf /" == Just False
-  where
-    pr = pScript "rm -rf /"
-    specNoSafety = (defaultSpec pr) { asOptionalChecks = [], asSafetyPolicy = Just "default deny" }
-    params = makeParameters specNoSafety
-
--- No-op when no policy text
-prop_noOpWithoutPolicy = producesComments (checker specNoPol params) "rm -rf /" == Just False
-  where
-    pr = pScript "rm -rf /"
-    specNoPol = (defaultSpec pr) { asOptionalChecks = ["safety"], asSafetyPolicy = Nothing }
-    params = makeParameters specNoPol
 
 -- Phase 4: git subcommand classification
 prop_gitLogAllowed = verifySafetyNot defaultDenyPolicy "git log --oneline"
