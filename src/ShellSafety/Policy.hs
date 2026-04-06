@@ -37,7 +37,7 @@ import ShellSafety.Effects (Effect(..))
 import Test.QuickCheck
 import Text.Regex.TDFA (Regex, makeRegexM)
 
-data Disposition = Allow | Deny deriving (Eq, Show)
+data Disposition = Allow | Ask | Deny deriving (Eq, Ord, Show)
 
 data Matcher
     = MatchEffect Effect
@@ -79,17 +79,19 @@ parseLine policy (lineNum, line) =
     case words line of
         ("default" : rest) -> parseDefault policy lineNum rest
         ("allow" : rest) -> parseRule policy lineNum Allow rest
+        ("ask" : rest) -> parseRule policy lineNum Ask rest
         ("deny" : rest) -> parseRule policy lineNum Deny rest
         ["assume", shell] -> Right policy { policyShell = Just (map toLower shell) }
         ("assume" : _) -> Left $ "line " ++ show lineNum ++ ": expected 'assume <shell>' (e.g. 'assume bash')"
-        _ -> Left $ "line " ++ show lineNum ++ ": expected 'default', 'allow', 'deny', or 'assume'"
+        _ -> Left $ "line " ++ show lineNum ++ ": expected 'default', 'allow', 'ask', 'deny', or 'assume'"
 
 parseDefault :: Policy -> Int -> [String] -> Either String Policy
 parseDefault policy lineNum ws =
     case ws of
         ["allow"] -> Right policy { policyDefault = Allow }
+        ["ask"] -> Right policy { policyDefault = Ask }
         ["deny"] -> Right policy { policyDefault = Deny }
-        _ -> Left $ "line " ++ show lineNum ++ ": expected 'default allow' or 'default deny'"
+        _ -> Left $ "line " ++ show lineNum ++ ": expected 'default allow', 'default ask', or 'default deny'"
 
 parseRule :: Policy -> Int -> Disposition -> [String] -> Either String Policy
 parseRule policy lineNum disp tokens = do
@@ -128,6 +130,7 @@ parseEffect s = case map toLower s of
     "mutating" -> Just Mutating
     "network_out" -> Just NetworkOut
     "executing" -> Just Executing
+    "dynamic" -> Just Dynamic
     "unknown" -> Just Unknown
     _ -> Nothing
 
@@ -345,6 +348,43 @@ prop_bareRuleMatchesAll :: Bool
 prop_bareRuleMatchesAll =
     let Right p = parsePolicy "default allow\ndeny"
     in evaluate p "anything" ["any", "args"] Mutating == Deny
+
+prop_parseDefaultAsk :: Bool
+prop_parseDefaultAsk = case parsePolicy "default ask" of
+    Right p -> policyDefault p == Ask
+    _ -> False
+
+prop_parseAskCommand :: Bool
+prop_parseAskCommand = case parsePolicy "ask command:git" of
+    Right p -> policyRules p == [Rule Ask [MatchCommand "git"]]
+    _ -> False
+
+prop_evalDefaultAsk :: Bool
+prop_evalDefaultAsk =
+    evaluate (Policy Ask [] Nothing) "foo" [] Unknown == Ask
+
+prop_evalAskByEffect :: Bool
+prop_evalAskByEffect =
+    let Right p = parsePolicy "default deny\nask effect:mutating"
+    in evaluate p "rm" [] Mutating == Ask
+
+prop_evalAskOverriddenByDeny :: Bool
+prop_evalAskOverriddenByDeny =
+    let Right p = parsePolicy "ask command:rm\ndeny command:rm"
+    in evaluate p "rm" [] Mutating == Deny
+
+prop_dispositionOrd :: Bool
+prop_dispositionOrd = Allow < Ask && Ask < Deny
+
+prop_parseDenyDynamic :: Bool
+prop_parseDenyDynamic = case parsePolicy "deny effect:dynamic" of
+    Right p -> policyRules p == [Rule Deny [MatchEffect Dynamic]]
+    _ -> False
+
+prop_evalDynamicByEffect :: Bool
+prop_evalDynamicByEffect =
+    let Right p = parsePolicy "default deny\nallow effect:dynamic"
+    in evaluate p "" [] Dynamic == Allow
 
 return []
 runTests = $quickCheckAll

@@ -51,7 +51,7 @@
 
 set -euo pipefail
 
-SAFETY_BIN="${SHELLSAFETY_BIN:-shellsafety}"
+SAFETY_BIN="${SHELLSAFETY_BIN:-$(cd ~/src/shellsafety && cabal list-bin shellsafety --allow-newer 2>/dev/null)}"
 POLICY_FILE="${SHELLSAFETY_POLICY:-${SHELLCHECK_SAFETY_POLICY:-$HOME/.shellsafety}}"
 
 # Read hook JSON from stdin once — we may need to replay it.
@@ -62,6 +62,18 @@ result=$(printf '%s' "$input" | "$SAFETY_BIN" 2>/dev/null) || true
 
 # If allowed (empty output), exit clean.
 if [[ -z "$result" ]]; then
+    exit 0
+fi
+
+# If ask decision, pass through to Claude Code's native prompt.
+decision=$(printf '%s' "$result" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+print(d.get('hookSpecificOutput', {}).get('permissionDecision', 'deny'))
+" 2>/dev/null) || decision="deny"
+
+if [[ "$decision" == "ask" ]]; then
+    printf '%s' "$result"
     exit 0
 fi
 
@@ -90,20 +102,45 @@ show_deny_dialog() {
     local default_rule=$3
     local add_hint=$4
 
+    # Replace newlines with a placeholder — raw newlines break AppleScript
+    # string literals.  The AppleScript helper below converts them to real
+    # linefeeds for display.
+    local nl_mark="%%NL%%"
+    cmd_display="${cmd_display//$'\n'/$nl_mark}"
+    reason_display="${reason_display//$'\n'/$nl_mark}"
+    add_hint="${add_hint//$'\n'/$nl_mark}"
+
     osascript <<APPLESCRIPT
-set cmdText to "Command: ${cmd_display//\"/\\\"}"
-set reasonText to "Reason: ${reason_display//\"/\\\"}"
+-- Convert %%NL%% placeholders to real linefeeds.
+on decodeLF(str)
+    set LF to character id 10
+    set saveTID to AppleScript's text item delimiters
+    set AppleScript's text item delimiters to "%%NL%%"
+    set parts to text items of str
+    set AppleScript's text item delimiters to LF
+    set str to parts as text
+    set AppleScript's text item delimiters to saveTID
+    return str
+end decodeLF
+
+set cmdText to my decodeLF("Command: ${cmd_display//\"/\\\"}")
+set reasonText to my decodeLF("Reason: ${reason_display//\"/\\\"}")
 set dialogText to cmdText & return & return & reasonText
 
-set choice to button returned of (display dialog dialogText ¬
+set chosen to choose from list {"Deny", "Ask", "Allow Once", "Add to Policy"} ¬
     with title "ShellSafety" ¬
-    buttons {"Deny", "Allow Once", "Add to Policy"} ¬
-    default button "Deny" ¬
-    giving up after 120)
+    with prompt dialogText ¬
+    default items {"Deny"}
+
+if chosen is false then
+    return ""
+end if
+
+set choice to item 1 of chosen
 
 if choice is "Add to Policy" then
     set ruleText to text returned of (display dialog ¬
-        "${add_hint//\"/\\\"}Append to ${POLICY_FILE//\"/\\\"}:" ¬
+        my decodeLF("${add_hint//\"/\\\"}Append to ${POLICY_FILE//\"/\\\"}:") ¬
         with title "ShellSafety" ¬
         default answer "${default_rule//\"/\\\"}" ¬
         buttons {"Cancel", "Add"} ¬
@@ -122,15 +159,20 @@ recommended="$default_rule"
 add_hint=""
 
 while true; do
-    choice=$(show_deny_dialog "$display_cmd" "$reason" "$default_rule" "$add_hint") || {
-        # Dialog cancelled or timed out — deny.
-        printf '%s' "$result"
-        exit 0
-    }
+    choice=$(show_deny_dialog "$display_cmd" "$reason" "$default_rule" "$add_hint") || choice=""
 
     case "$choice" in
-        "Deny")
+        ""|"Deny")
             printf '%s' "$result"
+            exit 0
+            ;;
+        "Ask")
+            printf '%s' "$result" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+d['hookSpecificOutput']['permissionDecision'] = 'ask'
+json.dump(d, sys.stdout)
+"
             exit 0
             ;;
         "Allow Once")

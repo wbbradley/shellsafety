@@ -32,9 +32,9 @@ import qualified Data.Map.Strict as M
 import Test.QuickCheck
 
 -- | Effect classification for shell commands.
--- Constructor order matters: ReadOnly < Mutating < NetworkOut < Executing < Unknown
+-- Constructor order matters: ReadOnly < Mutating < NetworkOut < Executing < Dynamic < Unknown
 -- so that 'maximum' over a pipeline yields the most conservative effect.
-data Effect = ReadOnly | Mutating | NetworkOut | Executing | Unknown
+data Effect = ReadOnly | Mutating | NetworkOut | Executing | Dynamic | Unknown
     deriving (Eq, Ord, Show, Enum, Bounded)
 
 instance Arbitrary Effect where  -- STRIP
@@ -190,7 +190,8 @@ prop_effectOrdering =
     ReadOnly < Mutating
     && Mutating < NetworkOut
     && NetworkOut < Executing
-    && Executing < Unknown
+    && Executing < Dynamic
+    && Dynamic < Unknown
 
 prop_builtinEffectsNonEmpty :: Bool
 prop_builtinEffectsNonEmpty = not (M.null builtinEffects)

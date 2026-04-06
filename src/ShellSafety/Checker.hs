@@ -28,36 +28,74 @@ import ShellSafety.Analysis (SafetyParams(..), SafetyM, warn, info, getClosestCo
 import ShellSafety.Effects (Effect(..), classifyCommand)
 import ShellSafety.Policy (Disposition(..), Policy, parsePolicy, evaluate, evaluateWithReason)
 
+import Control.Applicative ((<|>))
 import Data.Maybe
 import Test.QuickCheck
 
 checkSafety :: Policy -> Token -> SafetyM ()
-checkSafety policy t = case getCommand t of
-    Just sc@(T_SimpleCommand _ _ (cmdWord:argWords)) -> do
+checkSafety policy t = case t of
+    sc@(T_SimpleCommand _ _ (cmdWord:argWords)) -> do
         let scId = getId sc
-        let cmdName = fromMaybe "" $ getLiteralString cmdWord
-        let literalArgs = mapMaybe getLiteralString argWords
-        let allLiteral = length literalArgs == length argWords
-        let effectArgs = if allLiteral then literalArgs else []
-        let baseEffect = classifyCommand cmdName effectArgs
-        redirecting <- getClosestCommandM sc
-        let hasRedir = maybe False hasOutputRedirection redirecting
-        let effect = if hasRedir then max baseEffect Mutating else baseEffect
-        let (disposition, reason) = evaluateWithReason policy cmdName literalArgs effect
-        case disposition of
-            Allow -> info scId 4000 $
-                "Command '" ++ cmdName ++ "' classified as " ++ show effect
-                ++ ", allowed by safety policy (" ++ reason ++ ")"
-            Deny -> case effect of
-                Unknown -> warn scId 4002 $
-                    "Unknown command '" ++ cmdName ++ "', denied by default safety policy"
-                _ | hasRedir && baseEffect < Mutating -> warn scId 4001 $
-                    "Command '" ++ cmdName ++ "' with output redirection classified as "
-                    ++ show effect ++ ", denied by safety policy"
-                  | otherwise -> warn scId 4001 $
-                    "Command '" ++ cmdName ++ "' classified as " ++ show effect
-                    ++ ", denied by safety policy"
+        case getLiteralString cmdWord of
+            Just cmdName -> checkLiteralCommand policy scId cmdName cmdWord argWords sc
+            Nothing -> checkDynamicCommand policy scId cmdWord argWords
     _ -> return ()
+
+checkLiteralCommand :: Policy -> Id -> String -> Token -> [Token] -> Token -> SafetyM ()
+checkLiteralCommand policy scId cmdName cmdWord argWords sc = do
+    let literalArgs = mapMaybe getLiteralString argWords
+    let allLiteral = length literalArgs == length argWords
+    let effectArgs = if allLiteral then literalArgs else []
+    let baseEffect = classifyCommand cmdName effectArgs
+    redirecting <- getClosestCommandM sc
+    let hasRedir = maybe False hasOutputRedirection redirecting
+    let effect = if hasRedir then max baseEffect Mutating else baseEffect
+    let (disposition, reason) = evaluateWithReason policy cmdName literalArgs effect
+    case disposition of
+        Allow -> info scId 4000 $
+            "Command '" ++ cmdName ++ "' classified as " ++ show effect
+            ++ ", allowed by safety policy (" ++ reason ++ ")"
+        Ask -> case effect of
+            Unknown -> warn scId 4004 $
+                "Unknown command '" ++ cmdName ++ "', ask per safety policy"
+            _ | hasRedir && baseEffect < Mutating -> warn scId 4003 $
+                "Command '" ++ cmdName ++ "' with output redirection classified as "
+                ++ show effect ++ ", ask per safety policy"
+              | otherwise -> warn scId 4003 $
+                "Command '" ++ cmdName ++ "' classified as " ++ show effect
+                ++ ", ask per safety policy"
+        Deny -> case effect of
+            Unknown -> warn scId 4002 $
+                "Unknown command '" ++ cmdName ++ "', denied by default safety policy"
+            _ | hasRedir && baseEffect < Mutating -> warn scId 4001 $
+                "Command '" ++ cmdName ++ "' with output redirection classified as "
+                ++ show effect ++ ", denied by safety policy"
+              | otherwise -> warn scId 4001 $
+                "Command '" ++ cmdName ++ "' classified as " ++ show effect
+                ++ ", denied by safety policy"
+
+checkDynamicCommand :: Policy -> Id -> Token -> [Token] -> SafetyM ()
+checkDynamicCommand policy scId cmdWord argWords = do
+    let literalArgs = mapMaybe getLiteralString argWords
+    let innerName = getCommandNameFromExpansion cmdWord
+            <|> getVarExpansionName cmdWord
+    let innerDesc = case innerName of
+            Just name -> "Dynamic command (inner: " ++ name ++ ")"
+            Nothing   -> "Dynamic command"
+    let (disposition, _reason) = evaluateWithReason policy "" literalArgs Dynamic
+    case disposition of
+        Allow -> info scId 4000 $
+            innerDesc ++ ", allowed by safety policy"
+        Ask -> warn scId 4006 $
+            innerDesc ++ ", ask per safety policy"
+        Deny -> warn scId 4005 $
+            innerDesc ++ ", denied by safety policy"
+
+-- | Try to extract a variable name from $VAR used as a command name.
+getVarExpansionName :: Token -> Maybe String
+getVarExpansionName t = case getWordParts t of
+    (T_DollarBraced _ _ _):_ -> Just "$VAR"
+    _ -> Nothing
 
 hasOutputRedirection :: Token -> Bool
 hasOutputRedirection (T_Redirecting _ redirs _) = any isOutputRedir redirs
@@ -155,6 +193,33 @@ prop_whileConditionChecked = verifySafety defaultDenyPolicy "while rm file.txt; 
 
 -- Phase 6: curl --flag=value integration
 prop_curlDataEqualsIntegration = verifySafety defaultDenyPolicy "curl --data=hello https://example.com"
+
+-- Ask disposition tests
+verifySafetyAsk :: String -> String -> Bool
+verifySafetyAsk policyText script = producesAskCodes policyText script == Just True
+
+verifySafetyNotAsk :: String -> String -> Bool
+verifySafetyNotAsk policyText script = producesAskCodes policyText script == Just False
+
+producesAskCodes :: String -> String -> Maybe Bool
+producesAskCodes policyText s =
+    case parsePolicy policyText of
+        Left _ -> Nothing
+        Right p -> do
+            comments <- runSafetyAnalysis (checkSafety p) s
+            return . not . null $ filter (\tc -> cCode (tcComment tc) `elem` [4003, 4004, 4006]) comments
+
+defaultAskPolicy :: String
+defaultAskPolicy = "default ask\nallow effect:readonly"
+
+prop_askMutatingCommand = verifySafetyAsk defaultAskPolicy "rm file.txt"
+prop_askUnknownCommand = verifySafetyAsk "default ask" "my_custom_tool arg1"
+prop_askReadOnlyAllowed = verifySafetyNotAsk defaultAskPolicy "cat file.txt"
+
+-- Dynamic command tests
+prop_dynamicCommandDenied = verifySafety defaultDenyPolicy "$(my_tool) arg1"
+prop_dynamicCommandAllowed = verifySafetyNot "default deny\nallow effect:dynamic\nallow effect:unknown" "$(my_tool) arg1"
+prop_dynamicCommandAsk = verifySafetyAsk "default ask\nallow effect:readonly" "$(my_tool) arg1"
 
 return []
 runTests = $quickCheckAll

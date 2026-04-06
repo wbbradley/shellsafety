@@ -2,10 +2,11 @@
 
 ShellSafety is a safety gate for AI agent shell command execution. It parses
 shell commands, classifies their effects (read-only, mutating, network,
-executing), and evaluates them against a configurable policy to allow or deny
-execution. It is designed to be used as a [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
-`PreToolUse` hook so that AI agents can run permitted commands without human
-confirmation while dangerous commands are blocked before execution.
+executing, dynamic), and evaluates them against a configurable policy to allow,
+prompt for confirmation, or deny execution. It is designed to be used as a
+[Claude Code](https://docs.anthropic.com/en/docs/claude-code) `PreToolUse` hook
+so that AI agents can run permitted commands without human confirmation while
+dangerous or unknown commands are blocked or flagged before execution.
 
 Derived from [ShellCheck](https://www.shellcheck.net/) by Vidar Holen, licensed
 under [GPL-3](LICENSE).
@@ -94,15 +95,21 @@ starting with `#` are ignored.
 Sets the shell dialect for parsing (e.g., `assume bash`). If omitted, the
 shebang or default is used.
 
-### `default allow` / `default deny`
+### `default allow` / `default ask` / `default deny`
 
 Sets the fallback disposition when no rule matches. Default is `deny`.
 
-### `allow [matcher...]` / `deny [matcher...]`
+### `allow [matcher...]` / `ask [matcher...]` / `deny [matcher...]`
 
 Rules are evaluated top-to-bottom; the **last matching rule wins**. Each rule can
 have zero or more matchers. All matchers on a rule must match for the rule to
 apply (AND logic). A rule with no matchers matches everything.
+
+The three dispositions are:
+
+- **allow** — command runs immediately, no confirmation
+- **ask** — passed to Claude Code's native confirmation prompt
+- **deny** — command is blocked before execution
 
 ### Matchers
 
@@ -115,7 +122,7 @@ apply (AND logic). A rule with no matchers matches everything.
 
 ## Effect Categories
 
-ShellSafety classifies every command into one of five effect categories. In
+ShellSafety classifies every command into one of six effect categories. In
 pipelines, the most conservative (highest) effect wins.
 
 | Effect | Description | Examples |
@@ -124,6 +131,7 @@ pipelines, the most conservative (highest) effect wins.
 | `mutating` | Modifies files or system state | `rm`, `mv`, `chmod`, `git commit`, `apt install` |
 | `network_out` | Sends data over the network | `curl -d`, `ssh`, `wget`, `git push` |
 | `executing` | Runs arbitrary commands | `bash`, `sudo`, `python`, `find -exec` |
+| `dynamic` | Command name determined at runtime | `$(prog)`, `` `prog` ``, `$CMD` |
 | `unknown` | Command not in the built-in database | Any unrecognized command |
 
 Some commands are classified context-sensitively based on their arguments:
@@ -131,6 +139,39 @@ Some commands are classified context-sensitively based on their arguments:
 - **git**: `git status` is ReadOnly, `git push` is NetworkOut, `git commit` is Mutating
 - **curl**: `curl <url>` (GET) is ReadOnly, `curl -d data <url>` is NetworkOut
 - **find**: `find . -name '*.log'` is ReadOnly, `find -exec ...` is Executing, `find -delete` is Mutating
+
+### Output Redirection
+
+When a command has output redirection (`>`, `>>`, `>|`) to a real file, its
+effect is upgraded to at least `mutating`. For example, `echo hello > file.txt`
+is classified as Mutating even though `echo` alone is ReadOnly. Redirections to
+`/dev/null` are excluded from this upgrade.
+
+## Diagnostic Codes
+
+| Code | Disposition | Description |
+|------|-------------|-------------|
+| SC4000 | allow | Command allowed by policy (info-level, not emitted to hook) |
+| SC4001 | deny | Known command denied by policy |
+| SC4002 | deny | Unknown command denied by default policy |
+| SC4003 | ask | Known command requires confirmation |
+| SC4004 | ask | Unknown command requires confirmation |
+| SC4005 | deny | Dynamic command denied by policy |
+| SC4006 | ask | Dynamic command requires confirmation |
+
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `SHELLSAFETY_POLICY` | Path to the policy file (overrides default `~/.shellsafety`) |
+| `SHELLCHECK_SAFETY_POLICY` | Fallback if `SHELLSAFETY_POLICY` is not set |
+| `SHELLSAFETY_BIN` | Path to the `shellsafety` binary (used by `interactive-hook.sh`) |
+
+## Logging
+
+Every invocation is logged as a JSON line to `~/shellsafety.log` with
+timestamp, working directory, command, decision (`allow`/`ask`/`deny`/`skip`),
+and reasons.
 
 ## Example Policy
 
@@ -143,6 +184,9 @@ default deny
 
 # Allow all read-only commands
 allow effect:readonly
+
+# Prompt for unknown commands instead of blocking
+ask effect:unknown
 
 # Allow git, but not push
 allow command:git

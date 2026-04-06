@@ -45,7 +45,7 @@ import ShellSafety.Checker (checkSafety)
 import ShellSafety.Interface (TokenComment(..), Comment(..), newParseSpec, ParseSpec(..), newSystemInterface, SystemInterface, ParseResult(..), Shell(..))
 import ShellSafety.Parser (parseScript)
 import ShellSafety.Analysis (runSafetyM)
-import ShellSafety.Policy (parsePolicy, policyShell)
+import ShellSafety.Policy (Disposition(..), parsePolicy, policyShell)
 
 import Control.Exception (catch, IOException)
 import Data.Aeson (Value(..), decode)
@@ -78,7 +78,7 @@ shellForExecutable name =
         "oksh"  -> return Ksh
         _ -> Nothing
 
-data Outcome = Allowed String | Denied String | Skipped String
+data Outcome = Allowed String | Asked String | Denied String | Skipped String
 
 main :: IO ()
 main = do
@@ -99,7 +99,7 @@ main = do
                 Right policyText -> case cmd of
                     Nothing -> return (Skipped "no command in input", "")
                     Just c -> check policyText c
-    logInvocation cmd outcome
+    logInvocation input cmd outcome
     case output of
         "" -> return ()
         s  -> putStr s
@@ -147,17 +147,19 @@ check policyText cmd = do
                 Nothing -> return (Skipped "parse failed", "")
                 Just root -> do
                     let comments = runSafetyM root (checkSafety policy)
-                    let denies = filter (isDeny . tcComment) comments
-                    let allows = filter (isAllow . tcComment) comments
-                    let allowMessages = unlines $ map formatComment allows
-                    if null denies
-                        then return (Allowed allowMessages, "")
-                        else do
-                            let denyMessages = unlines $ map formatComment denies
-                            return (Denied denyMessages, denyJson denyMessages)
-  where
-    isDeny c = cCode c `elem` [4001, 4002]
-    isAllow c = cCode c == 4000
+                    let worst = maximum (Allow : map (commentDisposition . tcComment) comments)
+                    let relevant = filter ((== worst) . commentDisposition . tcComment) comments
+                    let messages = unlines $ map formatComment relevant
+                    case worst of
+                        Allow -> return (Allowed messages, "")
+                        Ask   -> return (Asked messages, askJson messages)
+                        Deny  -> return (Denied messages, denyJson messages)
+
+commentDisposition :: Comment -> Disposition
+commentDisposition c = case cCode c of
+    4001 -> Deny;  4002 -> Deny;  4005 -> Deny
+    4003 -> Ask;   4004 -> Ask;   4006 -> Ask
+    _    -> Allow
 
 formatComment :: TokenComment -> String
 formatComment tc =
@@ -165,6 +167,13 @@ formatComment tc =
         code = cCode c
         msg = cMessage c
     in "SC" ++ show code ++ ": " ++ msg
+
+askJson :: String -> String
+askJson reason =
+    "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\""
+    ++ ",\"permissionDecision\":\"ask\""
+    ++ ",\"permissionDecisionReason\":" ++ jsonString reason
+    ++ "}}"
 
 denyJson :: String -> String
 denyJson reason =
@@ -183,22 +192,25 @@ jsonString s = "\"" ++ concatMap escape s ++ "\""
     escape '\t' = "\\t"
     escape c    = [c]
 
-logInvocation :: Maybe String -> Outcome -> IO ()
-logInvocation cmd outcome = do
+logInvocation :: BL.ByteString -> Maybe String -> Outcome -> IO ()
+logInvocation input cmd outcome = do
     home <- getHomeDirectory
     cwd <- getCurrentDirectory
     now <- getCurrentTime
     let ts = formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S%QZ" now
     let (decision, reasons) = case outcome of
             Allowed msg  -> ("allow", toReasons msg)
+            Asked msg    -> ("ask", toReasons msg)
             Denied msg   -> ("deny", toReasons msg)
             Skipped msg  -> ("skip", [msg])
+    let rawInput = map (toEnum . fromEnum) (BL.unpack input) :: String
     let entry = "{" ++ intercalateComma
             [ jsonField "ts" ts
             , jsonField "cwd" cwd
             , jsonField "command" (fromMaybe "" cmd)
             , jsonField "decision" decision
             , jsonArray "reasons" reasons
+            , jsonString "input" ++ ":" ++ rawInput
             ] ++ "}"
     let logPath = home ++ "/shellsafety.log"
     withFile logPath AppendMode (\h -> hPutStrLn h entry)
