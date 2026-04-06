@@ -6,7 +6,6 @@ export EDITOR="touch"
 
 # Sanity check
 gh --version || exit 1
-gh release view latest || exit 1
 
 for tag in $TAGS
 do

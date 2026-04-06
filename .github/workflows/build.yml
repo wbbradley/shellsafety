@@ -22,7 +22,7 @@ jobs:
         run: |
           mkdir source
           echo "latest" > source/tags
-          if tag=$(git describe --exact-match --tags)
+          if tag=$(git tag -l 'v*' --points-at HEAD | head -1) && [ -n "$tag" ]
           then
             echo "stable" >> source/tags
             echo "$tag" >> source/tags
