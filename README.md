@@ -10,14 +10,38 @@ confirmation while dangerous commands are blocked before execution.
 Derived from [ShellCheck](https://www.shellcheck.net/) by Vidar Holen, licensed
 under [GPL-3](LICENSE).
 
-## Quick Start
+## Install
 
-### Build and install
+### From GitHub releases (recommended)
+
+Download a prebuilt binary for your platform:
+
+```sh
+# macOS (Apple Silicon)
+curl -L https://github.com/wbbradley/shellsafety/releases/download/latest/shellsafety-latest.darwin.aarch64.tar.xz | tar xJ
+cp shellsafety-latest/shellsafety ~/.local/bin/
+
+# macOS (Intel)
+curl -L https://github.com/wbbradley/shellsafety/releases/download/latest/shellsafety-latest.darwin.x86_64.tar.xz | tar xJ
+cp shellsafety-latest/shellsafety ~/.local/bin/
+
+# Linux (x86_64)
+curl -L https://github.com/wbbradley/shellsafety/releases/download/latest/shellsafety-latest.linux.x86_64.tar.xz | tar xJ
+cp shellsafety-latest/shellsafety ~/.local/bin/
+
+# Linux (aarch64)
+curl -L https://github.com/wbbradley/shellsafety/releases/download/latest/shellsafety-latest.linux.aarch64.tar.xz | tar xJ
+cp shellsafety-latest/shellsafety ~/.local/bin/
+```
+
+### From source
 
 ```sh
 cabal build --allow-newer
 cp "$(cabal list-bin shellsafety --allow-newer)" ~/.local/bin/
 ```
+
+## Quick Start
 
 ### Create a policy
 
