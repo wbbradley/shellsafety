@@ -4,6 +4,7 @@ set -xe
   tar xzv --strip-components=1
   chmod +x striptests && ./striptests
   mkdir "$TARGETNAME"
+  cabal update
   ( IFS=';'; cabal build $CABALOPTS )
   find . -name shellsafety -type f -exec mv {} "$TARGETNAME/" \;
   ls -l "$TARGETNAME"
