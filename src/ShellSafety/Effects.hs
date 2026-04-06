@@ -37,8 +37,8 @@ import Test.QuickCheck
 data Effect = ReadOnly | Mutating | NetworkOut | Executing | Unknown
     deriving (Eq, Ord, Show, Enum, Bounded)
 
-instance Arbitrary Effect where
-    arbitrary = arbitraryBoundedEnum
+instance Arbitrary Effect where  -- STRIP
+    arbitrary = arbitraryBoundedEnum  -- STRIP
 
 -- | Database mapping command basenames to their default effect.
 type EffectDB = M.Map String Effect

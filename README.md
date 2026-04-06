@@ -54,6 +54,12 @@ With `"allow": ["Bash(*)"]`, all Bash commands pass through the permission syste
 without prompting. The hook acts as the sole safety gate: commands that pass the
 policy run immediately; commands that violate it are denied before execution.
 
+### Interactive mode (macOS)
+
+For an interactive experience where denied commands pop up a native dialog
+letting you allow once or add a policy rule on the fly, see
+[`contrib/claude-code/interactive-hook.sh`](contrib/claude-code/interactive-hook.sh).
+
 ## Policy DSL Reference
 
 A policy file is a sequence of directives, one per line. Blank lines and lines
