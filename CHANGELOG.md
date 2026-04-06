@@ -2,7 +2,20 @@
 
 All notable changes to ShellSafety will be documented in this file.
 
-## [Unreleased]
+## [0.2.0] - 2026-04-06
+
+### Breaking Changes
+- **`Disposition` type** now has three constructors: `Allow | Ask | Deny` (was
+  `Allow | Deny`). Downstream code pattern-matching on `Disposition` must handle
+  the new `Ask` constructor.
+- **`Effect` type** now has six constructors: added `Dynamic` between
+  `Executing` and `Unknown`. The `Enum` ordinal of `Unknown` shifted from 4 to
+  5.
+- **Hook JSON output** can now emit `"permissionDecision": "ask"`. Consumers
+  that only handle `"deny"` must be updated.
+- **Dynamic commands are now evaluated** instead of silently skipped. Commands
+  like `$(prog)` and `` `prog` `` are now classified as `Dynamic` and subject
+  to policy rules.
 
 ### Added
 - **`ask` disposition**: three-valued policy decisions (allow/ask/deny). `ask`
