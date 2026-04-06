@@ -6,10 +6,10 @@ License-file:     LICENSE
 Category:         Static Analysis
 Author:           Will Bradley
 Maintainer:       williambbradley@gmail.com
-Homepage:         https://github.com/wbbradley/shellcheck
+Homepage:         https://github.com/wbbradley/shellsafety
 Build-Type:       Simple
 Cabal-Version:    1.18
-Bug-reports:      https://github.com/wbbradley/shellcheck/issues
+Bug-reports:      https://github.com/wbbradley/shellsafety/issues
 Description:
   ShellSafety is a safety gate for AI agent shell command execution.
   It parses shell commands, classifies their effects (read-only, mutating,
@@ -30,7 +30,7 @@ Extra-Source-Files:
 
 source-repository head
     type: git
-    location: https://github.com/wbbradley/shellcheck.git
+    location: https://github.com/wbbradley/shellsafety.git
 
 library
     hs-source-dirs: src

@@ -2,7 +2,7 @@
     Copyright 2024-2026 Will Bradley
 
     This file is part of ShellSafety.
-    https://github.com/wbbradley/shellcheck
+    https://github.com/wbbradley/shellsafety
 
     ShellSafety is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -108,15 +108,19 @@ parseMatcher lineNum token =
 
 parseArgMatcher :: Int -> String -> Either String Matcher
 parseArgMatcher lineNum pat
-    | isRegex pat =
-        let inner = init (tail pat)
-        in case makeRegexM inner of
+    | Just inner <- stripRegex pat =
+        case makeRegexM inner of
             Just re -> Right $ MatchArgRegex inner re
             Nothing -> Left $ "line " ++ show lineNum
                 ++ ": invalid regex in arg matcher: '" ++ inner ++ "'"
     | otherwise = Right $ MatchArgExact pat
-  where
-    isRegex s = length s >= 2 && head s == '/' && last s == '/'
+
+stripRegex :: String -> Maybe String
+stripRegex ('/':rest) =
+    case reverse rest of
+        '/':middle -> Just (reverse middle)
+        _ -> Nothing
+stripRegex _ = Nothing
 
 parseEffect :: String -> Maybe Effect
 parseEffect s = case map toLower s of

@@ -1,0 +1,39 @@
+name: Build Docker Images
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'builders/**'
+
+jobs:
+  build_and_push:
+    name: Build ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    strategy:
+      matrix:
+        target: [linux.x86_64, linux.aarch64, darwin.x86_64, darwin.aarch64]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set image name
+        id: image
+        run: |
+          target="${{ matrix.target }}"
+          echo "name=ghcr.io/wbbradley/shellsafety-builder-${target//./-}:latest" >> "$GITHUB_OUTPUT"
+
+      - name: Build image
+        run: docker build -t "${{ steps.image.outputs.name }}" "builders/${{ matrix.target }}"
+
+      - name: Push image
+        run: docker push "${{ steps.image.outputs.name }}"

@@ -29,10 +29,6 @@ RUN make install
 # It won't reuse caches if ghc-options are specified in ~/.cabal/config
 ENV CABALOPTS="--ghc-options;-optc-Os -optc-fPIC;--with-ghc=$TARGET-ghc;--with-hc-pkg=$TARGET-ghc-pkg;--constraint=hashable==1.3.5.0"
 
-# Prebuild the dependencies
-RUN cabal update
-RUN IFS=';' && cabal install --dependencies-only $CABALOPTS ShellSafety
-
 # Copy the build script
 COPY build /usr/bin
 

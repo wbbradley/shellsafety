@@ -23,9 +23,6 @@ RUN curl -L "https://downloads.haskell.org/~cabal/cabal-install-3.9.0.0/cabal-in
 # It won't reuse caches if ghc-options are specified in ~/.cabal/config
 ENV CABALOPTS="--with-ghc=$TARGET-ghc;--with-hc-pkg=$TARGET-ghc-pkg"
 
-# Prebuild the dependencies
-RUN cabal update && IFS=';' && cabal install --dependencies-only $CABALOPTS ShellSafety
-
 # Copy the build script
 COPY build /usr/bin
 
