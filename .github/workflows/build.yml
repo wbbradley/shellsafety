@@ -71,7 +71,7 @@ jobs:
       - name: Build and run tests
         run: |
           cd source
-          cabal test --allow-newer ${{ matrix.cabal_flags }}
+          cabal test ${{ matrix.cabal_flags }}
 
   build_source:
     name: Build
@@ -81,10 +81,18 @@ jobs:
     strategy:
       matrix:
         build: [linux.x86_64, linux.aarch64, darwin.x86_64, darwin.aarch64]
+      fail-fast: false
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download artifacts
         uses: actions/download-artifact@v8
