@@ -26,8 +26,8 @@ module ShellSafety.Policy (
     Policy(..),
     parsePolicy,
     evaluate,
-    evaluateWithReason,
-    runTests
+    evaluateWithReason
+    , runTests  -- STRIP
     ) where
 
 import Data.Char (isSpace, toLower)

@@ -23,8 +23,8 @@ module ShellSafety.Effects (
     Effect(..),
     EffectDB,
     builtinEffects,
-    classifyCommand,
-    runTests
+    classifyCommand
+    , runTests  -- STRIP
     ) where
 
 import Data.List (isPrefixOf)
