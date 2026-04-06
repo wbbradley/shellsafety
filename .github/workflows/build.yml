@@ -48,6 +48,8 @@ jobs:
       matrix:
         ghc: ['9.14.1', 'latest']
         include:
+          - ghc: '9.14.1'
+            cabal_flags: '--allow-newer'
           - ghc: 'latest'
             cabal_flags: '--allow-newer'
       fail-fast: false
