@@ -5,10 +5,10 @@ set -xe
   chmod +x striptests && ./striptests
   mkdir "$TARGETNAME"
   ( IFS=';'; cabal build $CABALOPTS --enable-executable-static )
-  find . -name shellcheck -type f -exec mv {} "$TARGETNAME/" \;
+  find . -name shellsafety -type f -exec mv {} "$TARGETNAME/" \;
   ls -l "$TARGETNAME"
-  "$TARGET-strip" -s "$TARGETNAME/shellcheck"
+  "$TARGET-strip" -s "$TARGETNAME/shellsafety"
   ls -l "$TARGETNAME"
-  "qemu-${TARGET%%-*}-static" "$TARGETNAME/shellcheck" --version
+  "qemu-${TARGET%%-*}-static" "$TARGETNAME/shellsafety" --version
 } >&2
 tar czv "$TARGETNAME"

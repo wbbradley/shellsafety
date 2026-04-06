@@ -16,13 +16,4 @@ cabal.project.freeze
 .stack-work
 stack.yaml.lock
 
-### Snap ###
-/snap/.snapcraft/
-/stage/
-/parts/
-/prime/
-*.snap
 /dist-newstyle/
-
-### misc ###
-/shellcheck.1

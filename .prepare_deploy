@@ -7,12 +7,12 @@ ls -l
 
 cp ../LICENSE LICENSE.txt
 sed -e $'s/$/\r/' > README.txt << END
-This is a precompiled ShellCheck binary.
-      https://www.shellcheck.net/
+This is a precompiled ShellSafety binary.
+      https://github.com/wbbradley/shellcheck
 
-ShellCheck is a static analysis tool for shell scripts.
+ShellSafety is a safety gate for AI agent shell command execution.
 It's licensed under the GNU General Public License v3.0.
-Information and source code is available on the website.
+Information and source code is available on GitHub.
 
 This binary was compiled on $(date -u).
 
@@ -33,16 +33,11 @@ echo "Tags are $TAGS"
 for tag in $TAGS
 do
 
-  for dir in windows.*/
-  do
-    ( cd "$dir" && zip "../shellcheck-$tag.zip" * )
-  done
-
   for dir in {linux,darwin}.*/
   do
     base="${dir%/}"
-    ( cd "$dir" && tar -cJf "../shellcheck-$tag.$base.tar.xz" --transform="s:^:shellcheck-$tag/:" * )
-    ( cd "$dir" && tar -czf "../shellcheck-$tag.$base.tar.gz" --transform="s:^:shellcheck-$tag/:" * )
+    ( cd "$dir" && tar -cJf "../shellsafety-$tag.$base.tar.xz" --transform="s:^:shellsafety-$tag/:" * )
+    ( cd "$dir" && tar -czf "../shellsafety-$tag.$base.tar.gz" --transform="s:^:shellsafety-$tag/:" * )
   done
 done
 

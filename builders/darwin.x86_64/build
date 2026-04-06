@@ -5,9 +5,9 @@ set -xe
   chmod +x striptests && ./striptests
   mkdir "$TARGETNAME"
   ( IFS=';'; cabal build $CABALOPTS )
-  find . -name shellcheck -type f -exec mv {} "$TARGETNAME/" \;
+  find . -name shellsafety -type f -exec mv {} "$TARGETNAME/" \;
   ls -l "$TARGETNAME"
-  "$TARGET-strip" -Sx "$TARGETNAME/shellcheck"
+  "$TARGET-strip" -Sx "$TARGETNAME/shellsafety"
   ls -l "$TARGETNAME"
 } >&2
 tar czv "$TARGETNAME"

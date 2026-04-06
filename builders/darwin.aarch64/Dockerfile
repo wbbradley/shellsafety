@@ -31,7 +31,7 @@ ENV CABALOPTS="--ghc-options;-optc-Os -optc-fPIC;--with-ghc=$TARGET-ghc;--with-h
 
 # Prebuild the dependencies
 RUN cabal update
-RUN IFS=';' && cabal install --dependencies-only $CABALOPTS ShellCheck
+RUN IFS=';' && cabal install --dependencies-only $CABALOPTS ShellSafety
 
 # Copy the build script
 COPY build /usr/bin

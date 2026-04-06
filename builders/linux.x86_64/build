@@ -6,10 +6,10 @@ set -xe
   mkdir "$TARGETNAME"
   cabal update
   ( IFS=';'; cabal build $CABALOPTS --enable-executable-static )
-  find . -name shellcheck -type f -exec mv {} "$TARGETNAME/" \;
+  find . -name shellsafety -type f -exec mv {} "$TARGETNAME/" \;
   ls -l "$TARGETNAME"
-  strip -s "$TARGETNAME/shellcheck"
+  strip -s "$TARGETNAME/shellsafety"
   ls -l "$TARGETNAME"
-  "$TARGETNAME/shellcheck" --version
+  "$TARGETNAME/shellsafety" --version
 } >&2
 tar czv "$TARGETNAME"
