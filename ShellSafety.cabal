@@ -1,0 +1,96 @@
+Name:             ShellSafety
+Version:          0.11.0
+Synopsis:         Safety gate for AI agent shell command execution
+License:          GPL-3
+License-file:     LICENSE
+Category:         Static Analysis
+Author:           Will Bradley
+Maintainer:       williambbradley@gmail.com
+Homepage:         https://github.com/wbbradley/shellcheck
+Build-Type:       Simple
+Cabal-Version:    1.18
+Bug-reports:      https://github.com/wbbradley/shellcheck/issues
+Description:
+  ShellSafety is a safety gate for AI agent shell command execution.
+  It parses shell commands, classifies their effects (read-only, mutating,
+  network, executing), and evaluates them against a configurable policy
+  to allow or deny execution.
+  .
+  Derived from ShellCheck by Vidar Holen (https://www.shellcheck.net).
+
+tested-with: GHC == 8.0, GHC == 8.10, GHC == 9.0.1, GHC == 9.4.7, GHC == 9.6.6
+
+Extra-Doc-Files:
+    README.md
+Extra-Source-Files:
+    -- convenience script for stripping tests
+    striptests
+    -- tests
+    test/shellsafety.hs
+
+source-repository head
+    type: git
+    location: https://github.com/wbbradley/shellcheck.git
+
+library
+    hs-source-dirs: src
+    if impl(ghc < 8.0)
+      build-depends:
+        semigroups
+    build-depends:
+      aeson                >= 1.4.0 && < 2.3,
+      base                 >= 4.8.0.0 && < 5,
+      bytestring           >= 0.10.6 && < 0.13,
+      containers           >= 0.5.6 && < 0.9,
+      deepseq              >= 1.4.2 && < 1.6,
+      mtl                  >= 2.2.2 && < 2.4,
+      parsec               >= 3.1.14 && < 3.2,
+      QuickCheck           >= 2.14.2 && < 2.17,
+      regex-tdfa           >= 1.2.0 && < 1.4,
+      transformers         >= 0.4.2 && < 0.7,
+      directory            >= 1.2.3 && < 1.4,
+      process
+    exposed-modules:
+      ShellSafety.AST
+      ShellSafety.ASTLib
+      ShellSafety.Analysis
+      ShellSafety.Checker
+      ShellSafety.Effects
+      ShellSafety.Interface
+      ShellSafety.Parser
+      ShellSafety.Policy
+      ShellSafety.Prelude
+      ShellSafety.Regex
+    other-modules:
+      Paths_ShellSafety
+    default-language: Haskell2010
+
+executable shellsafety
+    build-depends:
+      aeson,
+      base,
+      bytestring,
+      directory,
+      text,
+      time,
+      ShellSafety
+    default-language: Haskell2010
+    main-is: shellsafety.hs
+
+test-suite test-shellsafety
+    type: exitcode-stdio-1.0
+    build-depends:
+      aeson,
+      base,
+      bytestring,
+      containers,
+      deepseq,
+      directory,
+      mtl,
+      parsec,
+      QuickCheck,
+      regex-tdfa,
+      transformers,
+      ShellSafety
+    default-language: Haskell2010
+    main-is: test/shellsafety.hs

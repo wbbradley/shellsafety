@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# quicktest runs the ShellSafety unit tests in an interpreted mode.
+# This allows running tests without compiling, which can be faster.
+# 'cabal test' remains the source of truth.
+
+path=$(find . -type f -path './dist*/Paths_ShellSafety.hs' | sort | head -n 1)
+if [ -z "$path" ]
+then
+    echo >&2 "Unable to find Paths_ShellSafety.hs. Please 'cabal build' once."
+      exit 1
+fi
+path="${path%/*}"
+
+
+(
+var=$(echo 'main' | ghci -isrc -i"$path" test/shellsafety.hs 2>&1 | tee /dev/stderr)
+if [[ $var == *ExitSuccess* ]]
+then
+  exit 0
+else
+  grep -C 3 -e "Fail" -e "Tracing" <<< "$var"
+  exit 1
+fi
+) 2>&1

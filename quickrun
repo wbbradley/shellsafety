@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# quickrun runs ShellSafety in an interpreted mode.
+# This allows testing changes without recompiling.
+
+path=$(find . -type f -path './dist*/Paths_ShellSafety.hs' | sort | head -n 1)
+if [ -z "$path" ]
+then
+  echo >&2 "Unable to find Paths_ShellSafety.hs. Please 'cabal build' once."
+  exit 1
+fi
+path="${path%/*}"
+
+exec runghc -isrc -i"$path" shellsafety.hs "$@"

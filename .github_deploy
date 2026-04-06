@@ -1,0 +1,28 @@
+#!/bin/bash
+set -x
+shopt -s extglob
+
+export EDITOR="touch"
+
+# Sanity check
+gh --version || exit 1
+gh release view latest || exit 1
+
+for tag in $TAGS
+do
+  if ! gh release view "$tag" > /dev/null 2>&1
+  then
+    echo "Creating new release $tag"
+    git show --no-patch  --format='format:%B' > description
+    gh release create "$tag" -F description
+  fi
+
+  files=()
+  for file in deploy/*
+  do
+    [[ $file == *.@(xz|gz|zip) ]] || continue
+    [[ $file == *"$tag"* ]] || continue
+    files+=("$file")
+  done
+  gh release upload "$tag" "${files[@]}" --clobber || exit 1
+done
