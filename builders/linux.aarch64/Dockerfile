@@ -25,9 +25,6 @@ RUN sed -e 's/"\(gcc\|g++\|ld\)"/"'"$TARGET"'-\1"/g' -i /usr/local/lib/$TARGET-g
 # It won't reuse caches if ghc-options are specified in ~/.cabal/config
 ENV CABALOPTS="--ghc-options;-split-sections -optc-Os -optc-Wl,--gc-sections -optc-fPIC;--with-compiler=$TARGET-ghc;--with-hc-pkg=$TARGET-ghc-pkg;-c;hashable -arch-native"
 
-# Prebuild the dependencies
-RUN cabal update && IFS=';' && cabal install --dependencies-only $CABALOPTS ShellSafety
-
 # Copy the build script
 COPY build /usr/bin
 

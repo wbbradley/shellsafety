@@ -2,7 +2,7 @@
     Copyright 2024-2026 Will Bradley
 
     This file is part of ShellSafety.
-    https://github.com/wbbradley/shellcheck
+    https://github.com/wbbradley/shellsafety
 
     ShellSafety is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
