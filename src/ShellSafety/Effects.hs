@@ -100,11 +100,14 @@ executingCommands :: [(String, Effect)]
 executingCommands = map (\c -> (c, Executing))
     [ "bash", "csh", "dash", "env", "eval", "exec", "expect", "fish"
     , "ksh", "make", "nawk", "perl", "php", "python", "python3"
-    , "ruby", "sh", "sudo", "su", "tcsh", "xargs", "zsh"
+    , "ruby", "sh", "sudo", "su", "tcsh", "zsh"
     -- find is Executing because of -exec
     , "find"
     -- Docker runs arbitrary commands
     , "docker", "podman"
+    -- xargs is handled by classifyXargs but kept here as a fallback
+    -- for the builtinEffects map (conservative default)
+    , "xargs"
     ]
 
 allPairs :: [(String, Effect)]
@@ -117,10 +120,11 @@ builtinEffects = M.fromList allPairs
 
 -- | Classify a command by its basename and arguments.
 classifyCommand :: String -> [String] -> Effect
-classifyCommand "git"  args = classifyGit args
-classifyCommand "curl" args = classifyCurl args
-classifyCommand "find" args = classifyFind args
-classifyCommand cmd    _    = M.findWithDefault Unknown cmd builtinEffects
+classifyCommand "git"   args = classifyGit args
+classifyCommand "curl"  args = classifyCurl args
+classifyCommand "find"  args = classifyFind args
+classifyCommand "xargs" args = classifyXargs args
+classifyCommand cmd     _    = M.findWithDefault Unknown cmd builtinEffects
 
 classifyGit :: [String] -> Effect
 classifyGit [] = Mutating
@@ -163,6 +167,40 @@ classifyFind args
   where
     hasExec   = any (`elem` ["-exec", "-execdir", "-ok", "-okdir"]) args
     hasDelete = "-delete" `elem` args
+
+classifyXargs :: [String] -> Effect
+classifyXargs args = case stripXargsOpts args of
+    []         -> ReadOnly  -- no utility: xargs defaults to /bin/echo
+    (cmd:rest) -> classifyCommand cmd rest
+
+-- | Strip xargs options, returning the utility name and its arguments.
+stripXargsOpts :: [String] -> [String]
+stripXargsOpts [] = []
+stripXargsOpts ("--":rest) = rest
+stripXargsOpts (arg:rest)
+    | "--" `isPrefixOf` arg = stripXargsLong arg rest
+    | "-" `isPrefixOf` arg, length arg > 1 = stripXargsShort (drop 1 arg) rest
+    | otherwise = arg : rest
+
+stripXargsLong :: String -> [String] -> [String]
+stripXargsLong opt rest
+    | '=' `elem` opt = stripXargsOpts rest  -- value embedded: --max-args=5
+    | name `elem` ["--null", "--no-run-if-empty", "--verbose", "--replace"]
+        = stripXargsOpts rest
+    | name `elem` ["--max-args", "--max-procs", "--delimiter"]
+        = stripXargsOpts (drop 1 rest)
+    | otherwise = stripXargsOpts rest  -- unknown long opt, skip
+  where name = takeWhile (/= '=') opt
+
+stripXargsShort :: String -> [String] -> [String]
+stripXargsShort [] rest = stripXargsOpts rest
+stripXargsShort (c:cs) rest
+    | c `elem` "0oprtx" = stripXargsShort cs rest
+    | c `elem` "EIJLPRSdns" =
+        if null cs
+        then stripXargsOpts (drop 1 rest)
+        else stripXargsOpts rest
+    | otherwise = stripXargsShort cs rest
 
 -- Tests
 
@@ -234,6 +272,23 @@ prop_curlDataEqualsNetworkOut = classifyCommand "curl" ["--data=hello", "http://
 prop_curlFormEqualsNetworkOut = classifyCommand "curl" ["--form=file=@f", "http://example.com"] == NetworkOut
 prop_curlUploadFileEqualsNetworkOut = classifyCommand "curl" ["--upload-file=f", "http://example.com"] == NetworkOut
 prop_curlRequestEqualsNetworkOut = classifyCommand "curl" ["--request=POST", "http://example.com"] == NetworkOut
+
+-- Xargs argument-aware classification
+prop_xargsNoUtilReadOnly = classifyCommand "xargs" [] == ReadOnly
+prop_xargsRmMutating = classifyCommand "xargs" ["rm"] == Mutating
+prop_xargsFlag0Rm = classifyCommand "xargs" ["-0", "rm"] == Mutating
+prop_xargsReplaceRm = classifyCommand "xargs" ["-I", "{}", "rm", "{}"] == Mutating
+prop_xargsGrepReadOnly = classifyCommand "xargs" ["grep", "pattern"] == ReadOnly
+prop_xargsManyFlagsCurl = classifyCommand "xargs" ["-n", "1", "-P", "4", "curl", "https://example.com"] == ReadOnly
+prop_xargsComplexUnknown = classifyCommand "xargs" ["-I", "XX", "-R", "foo", "-S", "23", "-n", "3", "my-cmd", "--option-a", "XX"] == Unknown
+prop_xargsCurlPostNetworkOut = classifyCommand "xargs" ["curl", "-d", "data", "url"] == NetworkOut
+prop_xargsDashDashRm = classifyCommand "xargs" ["--", "rm", "-f"] == Mutating
+prop_xargsCombinedFlags = classifyCommand "xargs" ["-0pt", "rm"] == Mutating
+prop_xargsGnuLongNull = classifyCommand "xargs" ["--null", "rm"] == Mutating
+prop_xargsGnuMaxArgs = classifyCommand "xargs" ["--max-args=5", "rm"] == Mutating
+prop_xargsGnuMaxArgsSpace = classifyCommand "xargs" ["--max-args", "5", "rm"] == Mutating
+prop_xargsGnuReplace = classifyCommand "xargs" ["--replace", "rm", "{}"] == Mutating
+prop_xargsGnuVerbose = classifyCommand "xargs" ["--verbose", "cat", "file"] == ReadOnly
 
 return []
 runTests = $quickCheckAll

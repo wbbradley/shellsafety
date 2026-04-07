@@ -221,5 +221,13 @@ prop_dynamicCommandDenied = verifySafety defaultDenyPolicy "$(my_tool) arg1"
 prop_dynamicCommandAllowed = verifySafetyNot "default deny\nallow effect:dynamic\nallow effect:unknown" "$(my_tool) arg1"
 prop_dynamicCommandAsk = verifySafetyAsk "default ask\nallow effect:readonly" "$(my_tool) arg1"
 
+-- xargs argument-aware integration tests
+prop_xargsGrepAllowed = verifySafetyNot defaultDenyPolicy "echo files | xargs grep foo"
+prop_xargsRmDenied = verifySafety defaultDenyPolicy "echo files | xargs rm"
+prop_xargsMvDenied = verifySafety defaultDenyPolicy "echo files | xargs -0 -I {} mv {} {}.bak"
+prop_xargsCurlNoDenied = verifySafety defaultDenyPolicy "echo urls | xargs curl"
+prop_xargsBareAllowed = verifySafetyNot defaultDenyPolicy "echo hello | xargs"
+prop_xargsComplexFlagsUnknown = verifySafety defaultDenyPolicy "echo | xargs -I XX -n 3 my-cmd XX"
+
 return []
 runTests = $quickCheckAll

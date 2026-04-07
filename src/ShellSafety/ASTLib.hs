@@ -552,6 +552,14 @@ getCommandNameAndToken direct t = fromMaybe (Nothing, t) $ do
                     opts <- getBsdOpts "cla:" args
                     (_, (t, _)) <- find (null . fst) opts
                     return t
+                "xargs" -> do
+                    let longOpts = [("null", False), ("no-run-if-empty", False)
+                                   ,("verbose", False), ("replace", False)
+                                   ,("max-args", True), ("max-procs", True)
+                                   ,("delimiter", True)]
+                    opts <- getOpts (False, False) "0oprtxE:I:J:L:P:R:S:d:n:s:" longOpts args
+                    (_, (t, _)) <- find (null . fst) opts
+                    return t
                 _ -> fail ""
 
 -- If a command substitution is a single command, get its name.
