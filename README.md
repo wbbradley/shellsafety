@@ -38,8 +38,7 @@ cp shellsafety-latest/shellsafety ~/.local/bin/
 ### From source
 
 ```sh
-cabal build --allow-newer
-cp "$(cabal list-bin shellsafety --allow-newer)" ~/.local/bin/
+cabal install
 ```
 
 ## Quick Start
