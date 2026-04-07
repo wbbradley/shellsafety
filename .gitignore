@@ -15,5 +15,5 @@ cabal.config
 cabal.project.freeze
 .stack-work
 stack.yaml.lock
-
+.ghc.environment.*
 /dist-newstyle/

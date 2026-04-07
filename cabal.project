@@ -1,0 +1,6 @@
+packages: .
+
+-- Write a GHC environment file on every build so that plain `ghci`/`runghc`
+-- (as used by the quicktest and quickrun scripts) can find the project's
+-- built package dependencies.
+write-ghc-environment-files: always
