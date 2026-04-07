@@ -57,7 +57,7 @@ import Data.Maybe (fromMaybe)
 import Data.Time.Format (formatTime, defaultTimeLocale)
 import Data.Time.Clock (getCurrentTime)
 import System.Directory (getHomeDirectory, doesFileExist, getCurrentDirectory)
-import System.Environment (lookupEnv)
+import System.Environment (getArgs, lookupEnv)
 import System.Exit (exitSuccess)
 import System.IO (hPutStrLn, stderr, withFile, IOMode(..), hPutStrLn)
 
@@ -80,8 +80,62 @@ shellForExecutable name =
 
 data Outcome = Allowed String | Asked String | Denied String | Skipped String
 
+helpText :: String
+helpText = unlines
+    [ "shellsafety - safety gate for AI agent shell command execution"
+    , ""
+    , "ShellSafety is a Claude Code PreToolUse hook that parses shell commands,"
+    , "classifies their effects, and evaluates them against a policy to allow,"
+    , "prompt, or deny execution."
+    , ""
+    , "SETUP"
+    , ""
+    , "  1. Create a policy file at ~/.shellsafety:"
+    , ""
+    , "       assume bash"
+    , "       default deny"
+    , "       allow effect:readonly"
+    , "       allow command:git"
+    , "       deny command:git arg:push"
+    , ""
+    , "  2. Add to ~/.claude/settings.json (or .claude/settings.local.json):"
+    , ""
+    , "       {"
+    , "         \"permissions\": { \"allow\": [\"Bash(*)\"] },"
+    , "         \"hooks\": {"
+    , "           \"PreToolUse\": [{"
+    , "             \"matcher\": \"Bash\","
+    , "             \"hooks\": [{ \"type\": \"command\", \"command\": \"shellsafety\" }]"
+    , "           }]"
+    , "         }"
+    , "       }"
+    , ""
+    , "MANUAL TESTING"
+    , ""
+    , "  Test a denied command:"
+    , ""
+    , "    echo '{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"rm -rf /\"}}' | shellsafety"
+    , ""
+    , "  Test an allowed command:"
+    , ""
+    , "    echo '{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls -la\"}}' | shellsafety"
+    , ""
+    , "ENVIRONMENT VARIABLES"
+    , ""
+    , "  SHELLSAFETY_POLICY          Path to policy file (default: ~/.shellsafety)"
+    , "  SHELLCHECK_SAFETY_POLICY    Fallback if SHELLSAFETY_POLICY is not set"
+    , ""
+    , "Full documentation: https://github.com/wbbradley/shellsafety"
+    ]
+
 main :: IO ()
 main = do
+    args <- getArgs
+    case args of
+        (flag:_) | flag `elem` ["--help", "-h"] -> do
+            putStr helpText
+            exitSuccess
+        _ -> return ()
     policyPath <- findPolicyFile
     input <- BL.getContents
     let cmd = extractCommand input
