@@ -2,6 +2,16 @@
 
 All notable changes to ShellSafety will be documented in this file.
 
+## [0.3.1] - 2026-04-06
+
+### Added
+- Diagnostic messages for `xargs` commands now show the inner command that drove
+  the classification. For example, `xargs rm` reports `Command 'rm' (via xargs)`
+  instead of `Command 'xargs'`.
+
+### Changed
+- Simplified install-from-source instructions to a single `cabal install`.
+
 ## [0.3.0] - 2026-04-06
 
 ### Added
