@@ -139,6 +139,7 @@ Some commands are classified context-sensitively based on their arguments:
 - **git**: `git status` is ReadOnly, `git push` is NetworkOut, `git commit` is Mutating
 - **curl**: `curl <url>` (GET) is ReadOnly, `curl -d data <url>` is NetworkOut
 - **find**: `find . -name '*.log'` is ReadOnly, `find -exec ...` is Executing, `find -delete` is Mutating
+- **xargs**: `xargs grep pattern` is ReadOnly (classified by the utility command), bare `xargs` is ReadOnly (defaults to `/bin/echo`)
 
 ### Output Redirection
 

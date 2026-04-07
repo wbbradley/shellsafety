@@ -2,6 +2,20 @@
 
 All notable changes to ShellSafety will be documented in this file.
 
+## [0.3.0] - 2026-04-06
+
+### Added
+- `--help` / `-h` flag on the `shellsafety` binary, printing setup instructions,
+  usage examples, and environment variable documentation.
+- Argument-aware `xargs` classification: `xargs` now parses its flags to extract
+  the utility command and classify its effect. For example, `xargs grep pattern`
+  is classified as ReadOnly instead of Executing. Bare `xargs` (which defaults to
+  `/bin/echo`) is classified as ReadOnly.
+
+### Changed
+- Build configuration: added `cabal.project` with
+  `write-ghc-environment-files: always` for easier GHCi/runghc usage.
+
 ## [0.2.0] - 2026-04-06
 
 ### Breaking Changes
