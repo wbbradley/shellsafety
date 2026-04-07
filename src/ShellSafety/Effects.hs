@@ -119,12 +119,14 @@ builtinEffects :: EffectDB
 builtinEffects = M.fromList allPairs
 
 -- | Classify a command by its basename and arguments.
-classifyCommand :: String -> [String] -> Effect
-classifyCommand "git"   args = classifyGit args
-classifyCommand "curl"  args = classifyCurl args
-classifyCommand "find"  args = classifyFind args
+-- Returns (effectiveCommandName, effect) so callers can report which command
+-- actually drove the classification (e.g. "rm" via xargs).
+classifyCommand :: String -> [String] -> (String, Effect)
+classifyCommand "git"   args = ("git",  classifyGit args)
+classifyCommand "curl"  args = ("curl", classifyCurl args)
+classifyCommand "find"  args = ("find", classifyFind args)
 classifyCommand "xargs" args = classifyXargs args
-classifyCommand cmd     _    = M.findWithDefault Unknown cmd builtinEffects
+classifyCommand cmd     _    = (cmd,    M.findWithDefault Unknown cmd builtinEffects)
 
 classifyGit :: [String] -> Effect
 classifyGit [] = Mutating
@@ -168,9 +170,9 @@ classifyFind args
     hasExec   = any (`elem` ["-exec", "-execdir", "-ok", "-okdir"]) args
     hasDelete = "-delete" `elem` args
 
-classifyXargs :: [String] -> Effect
+classifyXargs :: [String] -> (String, Effect)
 classifyXargs args = case stripXargsOpts args of
-    []         -> ReadOnly  -- no utility: xargs defaults to /bin/echo
+    []         -> ("echo", ReadOnly)  -- no utility: xargs defaults to /bin/echo
     (cmd:rest) -> classifyCommand cmd rest
 
 -- | Strip xargs options, returning the utility name and its arguments.
@@ -205,23 +207,23 @@ stripXargsShort (c:cs) rest
 -- Tests
 
 prop_classifyReadOnly :: Bool
-prop_classifyReadOnly = classifyCommand "cat" [] == ReadOnly
+prop_classifyReadOnly = snd (classifyCommand "cat" []) == ReadOnly
 
 prop_classifyMutating :: Bool
-prop_classifyMutating = classifyCommand "rm" [] == Mutating
+prop_classifyMutating = snd (classifyCommand "rm" []) == Mutating
 
 prop_classifyNetworkOut :: Bool
-prop_classifyNetworkOut = classifyCommand "curl" [] == NetworkOut
+prop_classifyNetworkOut = snd (classifyCommand "curl" []) == NetworkOut
 
 prop_classifyExecuting :: Bool
-prop_classifyExecuting = classifyCommand "sudo" [] == Executing
+prop_classifyExecuting = snd (classifyCommand "sudo" []) == Executing
 
 prop_classifyUnknown :: Bool
-prop_classifyUnknown = classifyCommand "totally_unknown_cmd_xyz" [] == Unknown
+prop_classifyUnknown = snd (classifyCommand "totally_unknown_cmd_xyz" []) == Unknown
 
 prop_classifyIgnoresArgsForSimpleCommands :: Bool
 prop_classifyIgnoresArgsForSimpleCommands =
-    classifyCommand "cat" ["file1", "file2"] == classifyCommand "cat" []
+    snd (classifyCommand "cat" ["file1", "file2"]) == snd (classifyCommand "cat" [])
 
 prop_effectOrdering :: Bool
 prop_effectOrdering =
@@ -240,55 +242,65 @@ prop_builtinEffectsNoUnknown = all (/= Unknown) (M.elems builtinEffects)
 prop_noDuplicateKeys :: Bool
 prop_noDuplicateKeys = M.size builtinEffects == length allPairs
 
+-- Effective command name tests
+prop_effectiveNameSimple = fst (classifyCommand "cat" []) == "cat"
+prop_effectiveNameXargsRm = fst (classifyCommand "xargs" ["rm"]) == "rm"
+prop_effectiveNameXargsGrep = fst (classifyCommand "xargs" ["grep", "foo"]) == "grep"
+prop_effectiveNameXargsBare = fst (classifyCommand "xargs" []) == "echo"
+prop_effectiveNameXargsFlagsRm = fst (classifyCommand "xargs" ["-0", "-I", "{}", "rm", "{}"]) == "rm"
+prop_effectiveNameGit = fst (classifyCommand "git" ["status"]) == "git"
+prop_effectiveNameXargsCurl = fst (classifyCommand "xargs" ["curl", "-d", "data"]) == "curl"
+prop_effectiveNameXargsUnknown = fst (classifyCommand "xargs" ["my-cmd"]) == "my-cmd"
+
 -- Git argument-aware classification
-prop_gitStatusReadOnly = classifyCommand "git" ["status"] == ReadOnly
-prop_gitLogReadOnly = classifyCommand "git" ["log", "--oneline"] == ReadOnly
-prop_gitDiffReadOnly = classifyCommand "git" ["diff"] == ReadOnly
-prop_gitPushNetworkOut = classifyCommand "git" ["push", "origin", "main"] == NetworkOut
-prop_gitFetchNetworkOut = classifyCommand "git" ["fetch"] == NetworkOut
-prop_gitCloneNetworkOut = classifyCommand "git" ["clone", "url"] == NetworkOut
-prop_gitCommitMutating = classifyCommand "git" ["commit", "-m", "msg"] == Mutating
-prop_gitAddMutating = classifyCommand "git" ["add", "."] == Mutating
-prop_gitNoSubMutating = classifyCommand "git" [] == Mutating
+prop_gitStatusReadOnly = snd (classifyCommand "git" ["status"]) == ReadOnly
+prop_gitLogReadOnly = snd (classifyCommand "git" ["log", "--oneline"]) == ReadOnly
+prop_gitDiffReadOnly = snd (classifyCommand "git" ["diff"]) == ReadOnly
+prop_gitPushNetworkOut = snd (classifyCommand "git" ["push", "origin", "main"]) == NetworkOut
+prop_gitFetchNetworkOut = snd (classifyCommand "git" ["fetch"]) == NetworkOut
+prop_gitCloneNetworkOut = snd (classifyCommand "git" ["clone", "url"]) == NetworkOut
+prop_gitCommitMutating = snd (classifyCommand "git" ["commit", "-m", "msg"]) == Mutating
+prop_gitAddMutating = snd (classifyCommand "git" ["add", "."]) == Mutating
+prop_gitNoSubMutating = snd (classifyCommand "git" []) == Mutating
 
 -- Curl argument-aware classification
-prop_curlDefaultGetReadOnly = classifyCommand "curl" ["http://example.com"] == ReadOnly
-prop_curlPostNetworkOut = classifyCommand "curl" ["-d", "data", "http://example.com"] == NetworkOut
-prop_curlUploadNetworkOut = classifyCommand "curl" ["-T", "file", "http://example.com"] == NetworkOut
-prop_curlNoArgsNetworkOut = classifyCommand "curl" [] == NetworkOut
-prop_curlFormNetworkOut = classifyCommand "curl" ["-F", "file=@f", "http://example.com"] == NetworkOut
+prop_curlDefaultGetReadOnly = snd (classifyCommand "curl" ["http://example.com"]) == ReadOnly
+prop_curlPostNetworkOut = snd (classifyCommand "curl" ["-d", "data", "http://example.com"]) == NetworkOut
+prop_curlUploadNetworkOut = snd (classifyCommand "curl" ["-T", "file", "http://example.com"]) == NetworkOut
+prop_curlNoArgsNetworkOut = snd (classifyCommand "curl" []) == NetworkOut
+prop_curlFormNetworkOut = snd (classifyCommand "curl" ["-F", "file=@f", "http://example.com"]) == NetworkOut
 
 -- Find argument-aware classification
-prop_findSimpleReadOnly = classifyCommand "find" [".", "-name", "*.log"] == ReadOnly
-prop_findDeleteMutating = classifyCommand "find" [".", "-name", "*.tmp", "-delete"] == Mutating
-prop_findExecExecuting = classifyCommand "find" [".", "-exec", "rm", "{}", ";"] == Executing
-prop_findNoArgsExecuting = classifyCommand "find" [] == Executing
+prop_findSimpleReadOnly = snd (classifyCommand "find" [".", "-name", "*.log"]) == ReadOnly
+prop_findDeleteMutating = snd (classifyCommand "find" [".", "-name", "*.tmp", "-delete"]) == Mutating
+prop_findExecExecuting = snd (classifyCommand "find" [".", "-exec", "rm", "{}", ";"]) == Executing
+prop_findNoArgsExecuting = snd (classifyCommand "find" []) == Executing
 
 -- Tee
-prop_teeMutating = classifyCommand "tee" ["output.log"] == Mutating
+prop_teeMutating = snd (classifyCommand "tee" ["output.log"]) == Mutating
 
 -- Curl --flag=value syntax
-prop_curlDataEqualsNetworkOut = classifyCommand "curl" ["--data=hello", "http://example.com"] == NetworkOut
-prop_curlFormEqualsNetworkOut = classifyCommand "curl" ["--form=file=@f", "http://example.com"] == NetworkOut
-prop_curlUploadFileEqualsNetworkOut = classifyCommand "curl" ["--upload-file=f", "http://example.com"] == NetworkOut
-prop_curlRequestEqualsNetworkOut = classifyCommand "curl" ["--request=POST", "http://example.com"] == NetworkOut
+prop_curlDataEqualsNetworkOut = snd (classifyCommand "curl" ["--data=hello", "http://example.com"]) == NetworkOut
+prop_curlFormEqualsNetworkOut = snd (classifyCommand "curl" ["--form=file=@f", "http://example.com"]) == NetworkOut
+prop_curlUploadFileEqualsNetworkOut = snd (classifyCommand "curl" ["--upload-file=f", "http://example.com"]) == NetworkOut
+prop_curlRequestEqualsNetworkOut = snd (classifyCommand "curl" ["--request=POST", "http://example.com"]) == NetworkOut
 
 -- Xargs argument-aware classification
-prop_xargsNoUtilReadOnly = classifyCommand "xargs" [] == ReadOnly
-prop_xargsRmMutating = classifyCommand "xargs" ["rm"] == Mutating
-prop_xargsFlag0Rm = classifyCommand "xargs" ["-0", "rm"] == Mutating
-prop_xargsReplaceRm = classifyCommand "xargs" ["-I", "{}", "rm", "{}"] == Mutating
-prop_xargsGrepReadOnly = classifyCommand "xargs" ["grep", "pattern"] == ReadOnly
-prop_xargsManyFlagsCurl = classifyCommand "xargs" ["-n", "1", "-P", "4", "curl", "https://example.com"] == ReadOnly
-prop_xargsComplexUnknown = classifyCommand "xargs" ["-I", "XX", "-R", "foo", "-S", "23", "-n", "3", "my-cmd", "--option-a", "XX"] == Unknown
-prop_xargsCurlPostNetworkOut = classifyCommand "xargs" ["curl", "-d", "data", "url"] == NetworkOut
-prop_xargsDashDashRm = classifyCommand "xargs" ["--", "rm", "-f"] == Mutating
-prop_xargsCombinedFlags = classifyCommand "xargs" ["-0pt", "rm"] == Mutating
-prop_xargsGnuLongNull = classifyCommand "xargs" ["--null", "rm"] == Mutating
-prop_xargsGnuMaxArgs = classifyCommand "xargs" ["--max-args=5", "rm"] == Mutating
-prop_xargsGnuMaxArgsSpace = classifyCommand "xargs" ["--max-args", "5", "rm"] == Mutating
-prop_xargsGnuReplace = classifyCommand "xargs" ["--replace", "rm", "{}"] == Mutating
-prop_xargsGnuVerbose = classifyCommand "xargs" ["--verbose", "cat", "file"] == ReadOnly
+prop_xargsNoUtilReadOnly = snd (classifyCommand "xargs" []) == ReadOnly
+prop_xargsRmMutating = snd (classifyCommand "xargs" ["rm"]) == Mutating
+prop_xargsFlag0Rm = snd (classifyCommand "xargs" ["-0", "rm"]) == Mutating
+prop_xargsReplaceRm = snd (classifyCommand "xargs" ["-I", "{}", "rm", "{}"]) == Mutating
+prop_xargsGrepReadOnly = snd (classifyCommand "xargs" ["grep", "pattern"]) == ReadOnly
+prop_xargsManyFlagsCurl = snd (classifyCommand "xargs" ["-n", "1", "-P", "4", "curl", "https://example.com"]) == ReadOnly
+prop_xargsComplexUnknown = snd (classifyCommand "xargs" ["-I", "XX", "-R", "foo", "-S", "23", "-n", "3", "my-cmd", "--option-a", "XX"]) == Unknown
+prop_xargsCurlPostNetworkOut = snd (classifyCommand "xargs" ["curl", "-d", "data", "url"]) == NetworkOut
+prop_xargsDashDashRm = snd (classifyCommand "xargs" ["--", "rm", "-f"]) == Mutating
+prop_xargsCombinedFlags = snd (classifyCommand "xargs" ["-0pt", "rm"]) == Mutating
+prop_xargsGnuLongNull = snd (classifyCommand "xargs" ["--null", "rm"]) == Mutating
+prop_xargsGnuMaxArgs = snd (classifyCommand "xargs" ["--max-args=5", "rm"]) == Mutating
+prop_xargsGnuMaxArgsSpace = snd (classifyCommand "xargs" ["--max-args", "5", "rm"]) == Mutating
+prop_xargsGnuReplace = snd (classifyCommand "xargs" ["--replace", "rm", "{}"]) == Mutating
+prop_xargsGnuVerbose = snd (classifyCommand "xargs" ["--verbose", "cat", "file"]) == ReadOnly
 
 return []
 runTests = $quickCheckAll

@@ -46,32 +46,35 @@ checkLiteralCommand policy scId cmdName cmdWord argWords sc = do
     let literalArgs = mapMaybe getLiteralString argWords
     let allLiteral = length literalArgs == length argWords
     let effectArgs = if allLiteral then literalArgs else []
-    let baseEffect = classifyCommand cmdName effectArgs
+    let (effectiveName, baseEffect) = classifyCommand cmdName effectArgs
     redirecting <- getClosestCommandM sc
     let hasRedir = maybe False hasOutputRedirection redirecting
     let effect = if hasRedir then max baseEffect Mutating else baseEffect
+    let displayName = if effectiveName /= cmdName
+                      then "'" ++ effectiveName ++ "' (via " ++ cmdName ++ ")"
+                      else "'" ++ effectiveName ++ "'"
     let (disposition, reason) = evaluateWithReason policy cmdName literalArgs effect
     case disposition of
         Allow -> info scId 4000 $
-            "Command '" ++ cmdName ++ "' classified as " ++ show effect
+            "Command " ++ displayName ++ " classified as " ++ show effect
             ++ ", allowed by safety policy (" ++ reason ++ ")"
         Ask -> case effect of
             Unknown -> warn scId 4004 $
-                "Unknown command '" ++ cmdName ++ "', ask per safety policy"
+                "Unknown command " ++ displayName ++ ", ask per safety policy"
             _ | hasRedir && baseEffect < Mutating -> warn scId 4003 $
-                "Command '" ++ cmdName ++ "' with output redirection classified as "
+                "Command " ++ displayName ++ " with output redirection classified as "
                 ++ show effect ++ ", ask per safety policy"
               | otherwise -> warn scId 4003 $
-                "Command '" ++ cmdName ++ "' classified as " ++ show effect
+                "Command " ++ displayName ++ " classified as " ++ show effect
                 ++ ", ask per safety policy"
         Deny -> case effect of
             Unknown -> warn scId 4002 $
-                "Unknown command '" ++ cmdName ++ "', denied by default safety policy"
+                "Unknown command " ++ displayName ++ ", denied by default safety policy"
             _ | hasRedir && baseEffect < Mutating -> warn scId 4001 $
-                "Command '" ++ cmdName ++ "' with output redirection classified as "
+                "Command " ++ displayName ++ " with output redirection classified as "
                 ++ show effect ++ ", denied by safety policy"
               | otherwise -> warn scId 4001 $
-                "Command '" ++ cmdName ++ "' classified as " ++ show effect
+                "Command " ++ displayName ++ " classified as " ++ show effect
                 ++ ", denied by safety policy"
 
 checkDynamicCommand :: Policy -> Id -> Token -> [Token] -> SafetyM ()
