@@ -42,9 +42,9 @@
 --     2. ~/.shellsafety
 
 import ShellSafety.Checker (checkSafety)
-import ShellSafety.Interface (TokenComment(..), Comment(..), newParseSpec, ParseSpec(..), newSystemInterface, SystemInterface, ParseResult(..), Shell(..))
+import ShellSafety.Interface (newParseSpec, ParseSpec(..), newSystemInterface, SystemInterface, ParseResult(..), Shell(..), PositionedComment(..), Comment(..))
 import ShellSafety.Parser (parseScript)
-import ShellSafety.Analysis (runSafetyM)
+import ShellSafety.Analysis (SafetyResult(..), runSafetyM)
 import ShellSafety.Policy (Disposition(..), Policy, parsePolicy, policyShell)
 
 import Control.Exception (catch, IOException)
@@ -218,12 +218,18 @@ checkWithPolicy policy cmd = do
         }
     pr <- parseScript (newSystemInterface :: SystemInterface IO) pSpec
     case prRoot pr of
-        Nothing -> return (Skipped "parse failed", "")
+        Nothing -> do
+            let parseErrors = map (cMessage . pcComment) (prComments pr)
+            let msg = "Parse failed, defaulting to ask: "
+                      ++ if null parseErrors
+                         then "(no details)"
+                         else unwords parseErrors
+            return (Asked msg, askJson msg)
         Just root -> do
-            let comments = runSafetyM root (checkSafety policy)
-            let worst = maximum (Allow : map (commentDisposition . tcComment) comments)
-            let relevant = filter ((== worst) . commentDisposition . tcComment) comments
-            let messages = unlines $ map formatComment relevant
+            let results = runSafetyM root (checkSafety policy)
+            let worst = maximum (Allow : map srDisposition results)
+            let relevant = filter ((== worst) . srDisposition) results
+            let messages = unlines $ map srMessage relevant
             case worst of
                 Allow -> return (Allowed messages, "")
                 Ask   -> return (Asked messages, askJson messages)
@@ -271,19 +277,6 @@ interactiveLoop policy = runInputT defaultSettings loop
                         outputStrLn "reasons:"
                         mapM_ (\r -> outputStrLn $ "  " ++ r) rs
                 loop
-
-commentDisposition :: Comment -> Disposition
-commentDisposition c = case cCode c of
-    4001 -> Deny;  4002 -> Deny;  4005 -> Deny
-    4003 -> Ask;   4004 -> Ask;   4006 -> Ask
-    _    -> Allow
-
-formatComment :: TokenComment -> String
-formatComment tc =
-    let c = tcComment tc
-        code = cCode c
-        msg = cMessage c
-    in "SC" ++ show code ++ ": " ++ msg
 
 askJson :: String -> String
 askJson reason =

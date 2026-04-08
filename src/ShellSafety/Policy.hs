@@ -18,6 +18,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -}
 
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TemplateHaskell #-}
 module ShellSafety.Policy (
     Disposition(..),
@@ -30,14 +31,17 @@ module ShellSafety.Policy (
     , runTests  -- STRIP
     ) where
 
+import Control.DeepSeq
 import Data.Char (isSpace, toLower)
 import Data.List (isInfixOf, isPrefixOf)
+import GHC.Generics (Generic)
 import ShellSafety.Regex (matches)
 import ShellSafety.Effects (Effect(..))
 import Test.QuickCheck
 import Text.Regex.TDFA (Regex, makeRegexM)
 
-data Disposition = Allow | Ask | Deny deriving (Eq, Ord, Show)
+data Disposition = Allow | Ask | Deny deriving (Eq, Ord, Show, Generic)
+instance NFData Disposition
 
 data Matcher
     = MatchEffect Effect

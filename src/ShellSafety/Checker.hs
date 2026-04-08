@@ -23,8 +23,7 @@ module ShellSafety.Checker (checkSafety, ShellSafety.Checker.runTests) where
 
 import ShellSafety.AST
 import ShellSafety.ASTLib
-import ShellSafety.Interface
-import ShellSafety.Analysis (SafetyParams(..), SafetyM, warn, info, getClosestCommandM, pScript, runSafetyAnalysis)
+import ShellSafety.Analysis (SafetyParams(..), SafetyM, SafetyResult(..), emit, getClosestCommandM, pScript, runSafetyAnalysis)
 import ShellSafety.Effects (Effect(..), classifyCommand)
 import ShellSafety.Policy (Disposition(..), Policy, parsePolicy, evaluate, evaluateWithReason)
 
@@ -34,15 +33,14 @@ import Test.QuickCheck
 
 checkSafety :: Policy -> Token -> SafetyM ()
 checkSafety policy t = case t of
-    sc@(T_SimpleCommand _ _ (cmdWord:argWords)) -> do
-        let scId = getId sc
+    sc@(T_SimpleCommand _ _ (cmdWord:argWords)) ->
         case getLiteralString cmdWord of
-            Just cmdName -> checkLiteralCommand policy scId cmdName cmdWord argWords sc
-            Nothing -> checkDynamicCommand policy scId cmdWord argWords
+            Just cmdName -> checkLiteralCommand policy cmdName cmdWord argWords sc
+            Nothing -> checkDynamicCommand policy cmdWord argWords
     _ -> return ()
 
-checkLiteralCommand :: Policy -> Id -> String -> Token -> [Token] -> Token -> SafetyM ()
-checkLiteralCommand policy scId cmdName cmdWord argWords sc = do
+checkLiteralCommand :: Policy -> String -> Token -> [Token] -> Token -> SafetyM ()
+checkLiteralCommand policy cmdName cmdWord argWords sc = do
     let literalArgs = mapMaybe getLiteralString argWords
     let allLiteral = length literalArgs == length argWords
     let effectArgs = if allLiteral then literalArgs else []
@@ -55,30 +53,30 @@ checkLiteralCommand policy scId cmdName cmdWord argWords sc = do
                       else "'" ++ effectiveName ++ "'"
     let (disposition, reason) = evaluateWithReason policy cmdName literalArgs effect
     case disposition of
-        Allow -> info scId 4000 $
+        Allow -> emit Allow $
             "Command " ++ displayName ++ " classified as " ++ show effect
             ++ ", allowed by safety policy (" ++ reason ++ ")"
         Ask -> case effect of
-            Unknown -> warn scId 4004 $
+            Unknown -> emit Ask $
                 "Unknown command " ++ displayName ++ ", ask per safety policy"
-            _ | hasRedir && baseEffect < Mutating -> warn scId 4003 $
+            _ | hasRedir && baseEffect < Mutating -> emit Ask $
                 "Command " ++ displayName ++ " with output redirection classified as "
                 ++ show effect ++ ", ask per safety policy"
-              | otherwise -> warn scId 4003 $
+              | otherwise -> emit Ask $
                 "Command " ++ displayName ++ " classified as " ++ show effect
                 ++ ", ask per safety policy"
         Deny -> case effect of
-            Unknown -> warn scId 4002 $
+            Unknown -> emit Deny $
                 "Unknown command " ++ displayName ++ ", denied by default safety policy"
-            _ | hasRedir && baseEffect < Mutating -> warn scId 4001 $
+            _ | hasRedir && baseEffect < Mutating -> emit Deny $
                 "Command " ++ displayName ++ " with output redirection classified as "
                 ++ show effect ++ ", denied by safety policy"
-              | otherwise -> warn scId 4001 $
+              | otherwise -> emit Deny $
                 "Command " ++ displayName ++ " classified as " ++ show effect
                 ++ ", denied by safety policy"
 
-checkDynamicCommand :: Policy -> Id -> Token -> [Token] -> SafetyM ()
-checkDynamicCommand policy scId cmdWord argWords = do
+checkDynamicCommand :: Policy -> Token -> [Token] -> SafetyM ()
+checkDynamicCommand policy cmdWord argWords = do
     let literalArgs = mapMaybe getLiteralString argWords
     let innerName = getCommandNameFromExpansion cmdWord
             <|> getVarExpansionName cmdWord
@@ -87,11 +85,11 @@ checkDynamicCommand policy scId cmdWord argWords = do
             Nothing   -> "Dynamic command"
     let (disposition, _reason) = evaluateWithReason policy "" literalArgs Dynamic
     case disposition of
-        Allow -> info scId 4000 $
+        Allow -> emit Allow $
             innerDesc ++ ", allowed by safety policy"
-        Ask -> warn scId 4006 $
+        Ask -> emit Ask $
             innerDesc ++ ", ask per safety policy"
-        Deny -> warn scId 4005 $
+        Deny -> emit Deny $
             innerDesc ++ ", denied by safety policy"
 
 -- | Try to extract a variable name from $VAR used as a command name.
@@ -129,8 +127,8 @@ producesCommentsSafety policyText s =
     case parsePolicy policyText of
         Left _ -> Nothing
         Right p -> do
-            comments <- runSafetyAnalysis (checkSafety p) s
-            return . not . null $ filter (\tc -> cCode (tcComment tc) /= 4000) comments
+            results <- runSafetyAnalysis (checkSafety p) s
+            return . not . null $ filter (\r -> srDisposition r /= Allow) results
 
 defaultDenyPolicy :: String
 defaultDenyPolicy = "default deny\nallow effect:readonly"
@@ -215,8 +213,8 @@ producesAskCodes policyText s =
     case parsePolicy policyText of
         Left _ -> Nothing
         Right p -> do
-            comments <- runSafetyAnalysis (checkSafety p) s
-            return . not . null $ filter (\tc -> cCode (tcComment tc) `elem` [4003, 4004, 4006]) comments
+            results <- runSafetyAnalysis (checkSafety p) s
+            return . not . null $ filter (\r -> srDisposition r == Ask) results
 
 defaultAskPolicy :: String
 defaultAskPolicy = "default ask\nallow effect:readonly"

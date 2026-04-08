@@ -18,18 +18,17 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -}
 
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 module ShellSafety.Analysis
     (
     -- * Types
       SafetyParams(..)
     , SafetyM
+    , SafetyResult(..)
 
-    -- * Comment helpers
-    , makeComment
-    , addComment
-    , warn
-    , info
+    -- * Emitting results
+    , emit
 
     -- * Parent traversal
     , getParentTree
@@ -47,8 +46,9 @@ module ShellSafety.Analysis
 
 import ShellSafety.AST
 import ShellSafety.ASTLib
-import ShellSafety.Interface
+import ShellSafety.Interface (newParseSpec, ParseSpec(..), mockedSystemInterface, ParseResult(..))
 import ShellSafety.Parser
+import ShellSafety.Policy (Disposition(..))
 
 import Control.Arrow (first)
 import Control.DeepSeq
@@ -57,6 +57,7 @@ import Control.Monad.Identity
 import Control.Monad.RWS
 import Control.Monad.State
 import Control.Monad.Writer
+import GHC.Generics (Generic)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map
 
@@ -69,31 +70,19 @@ data SafetyParams = SafetyParams
     , spRootNode  :: Token
     } deriving (Show)
 
--- | The safety analysis monad. Reader for params, Writer for comments, no state needed.
-type SafetyM = RWS SafetyParams [TokenComment] ()
+-- | A safety analysis result carrying a disposition and human-readable message.
+data SafetyResult = SafetyResult
+    { srDisposition :: Disposition
+    , srMessage     :: String
+    } deriving (Show, Eq, Generic)
+instance NFData SafetyResult
 
+-- | The safety analysis monad. Reader for params, Writer for results, no state needed.
+type SafetyM = RWS SafetyParams [SafetyResult] ()
 
--- Comment helpers (from AnalyzerLib)
-
-makeComment :: Severity -> Id -> Code -> String -> TokenComment
-makeComment severity id code note =
-    newTokenComment {
-        tcId = id,
-        tcComment = newComment {
-            cSeverity = severity,
-            cCode = code,
-            cMessage = note
-        }
-    }
-
-addComment :: MonadWriter [TokenComment] m => TokenComment -> m ()
-addComment note = note `deepseq` tell [note]
-
-warn :: MonadWriter [TokenComment] m => Id -> Code -> String -> m ()
-warn id code str = addComment $ makeComment WarningC id code str
-
-info :: MonadWriter [TokenComment] m => Id -> Code -> String -> m ()
-info id code str = addComment $ makeComment InfoC id code str
+-- | Emit a safety result with the given disposition and message.
+emit :: Disposition -> String -> SafetyM ()
+emit disp msg = let r = SafetyResult disp msg in r `deepseq` tell [r]
 
 
 -- Parent traversal (from AnalyzerLib)
@@ -143,7 +132,7 @@ findFirst p = foldr go Nothing
 
 -- | Run a safety analysis over an AST. Builds SafetyParams from the root token,
 -- walks the AST with doAnalysis, and returns collected comments.
-runSafetyM :: Token -> (Token -> SafetyM ()) -> [TokenComment]
+runSafetyM :: Token -> (Token -> SafetyM ()) -> [SafetyResult]
 runSafetyM root check =
     snd $ evalRWS (void $ doAnalysis check root) params ()
   where
@@ -166,7 +155,7 @@ pScript s =
 --
 -- Deliberately omits filterByAnnotation: SC4xxx safety codes must never be
 -- suppressible via annotations.
-runSafetyAnalysis :: (Token -> SafetyM ()) -> String -> Maybe [TokenComment]
+runSafetyAnalysis :: (Token -> SafetyM ()) -> String -> Maybe [SafetyResult]
 runSafetyAnalysis check s = do
     root <- prRoot (pScript s)
     return $ runSafetyM root check
