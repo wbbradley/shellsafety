@@ -84,15 +84,19 @@ Test commands interactively against your policy:
 
 ```sh
 shellsafety -i
-$ ls -la
+shellsafety> ls -la
 disposition: allow
 reasons:
   SC4000: Command 'ls' classified as ReadOnly, allowed by safety policy (allow effect:readonly)
-$ rm -rf /
+shellsafety> rm -rf /
 disposition: deny
 reasons:
   SC4001: Command 'rm' classified as Mutating, denied by safety policy
 ```
+
+Interactive mode supports readline editing (arrow keys, Ctrl-A/E/K) and command
+history via haskeline. Disposition output is color-coded: green for allow, yellow
+for ask, red for deny.
 
 ### Interactive mode (macOS)
 

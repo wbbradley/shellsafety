@@ -2,6 +2,17 @@
 
 All notable changes to ShellSafety will be documented in this file.
 
+## [0.3.5] - 2026-04-08
+
+### Added
+- Readline editing support (arrow keys, Ctrl-A/E/K) and command history in
+  interactive mode via the haskeline library.
+- Color-coded disposition output in interactive mode: green for allow, yellow
+  for ask, red for deny.
+
+### Changed
+- Interactive mode prompt changed from `$ ` to `shellsafety> `.
+
 ## [0.3.4] - 2026-04-08
 
 ### Added

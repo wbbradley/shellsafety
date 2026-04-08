@@ -48,6 +48,7 @@ import ShellSafety.Analysis (runSafetyM)
 import ShellSafety.Policy (Disposition(..), Policy, parsePolicy, policyShell)
 
 import Control.Exception (catch, IOException)
+import Control.Monad.IO.Class (liftIO)
 import Data.Aeson (Value(..), decode)
 import qualified Data.Aeson.Key as Key
 import qualified Data.Aeson.KeyMap as KM
@@ -61,7 +62,8 @@ import System.Environment (getArgs, lookupEnv)
 import Data.Version (showVersion)
 import Paths_ShellSafety (version)
 import System.Exit (exitSuccess, exitFailure)
-import System.IO (hPutStrLn, stderr, withFile, IOMode(..), hPutStrLn, hFlush, stdout, hIsEOF, stdin)
+import System.IO (hPutStrLn, stderr, withFile, IOMode(..), hPutStrLn)
+import System.Console.Haskeline
 
 shellForExecutable :: String -> Maybe Shell
 shellForExecutable name =
@@ -248,30 +250,27 @@ runInteractive = do
                     Right policy -> interactiveLoop policy
 
 interactiveLoop :: Policy -> IO ()
-interactiveLoop policy = do
-    eof <- hIsEOF stdin
-    if eof
-        then putStrLn ""
-        else do
-            putStr "$ "
-            hFlush stdout
-            cmd <- getLine
-            if null cmd
-                then interactiveLoop policy
-                else do
-                    (outcome, _) <- checkWithPolicy policy cmd
-                    let (disposition, reasons) = case outcome of
-                            Allowed msg -> ("allow", msg)
-                            Asked msg   -> ("ask", msg)
-                            Denied msg  -> ("deny", msg)
-                            Skipped msg -> ("skip", msg)
-                    putStrLn $ "disposition: " ++ disposition
-                    case filter (not . null) (lines reasons) of
-                        [] -> return ()
-                        rs -> do
-                            putStrLn "reasons:"
-                            mapM_ (\r -> putStrLn $ "  " ++ r) rs
-                    interactiveLoop policy
+interactiveLoop policy = runInputT defaultSettings loop
+  where
+    loop = do
+        minput <- getInputLine "shellsafety> "
+        case minput of
+            Nothing -> return ()
+            Just cmd | null cmd -> loop
+            Just cmd -> do
+                (outcome, _) <- liftIO $ checkWithPolicy policy cmd
+                let (color, disposition, reasons) = case outcome of
+                        Allowed msg -> ("\ESC[32m", "allow", msg)
+                        Asked msg   -> ("\ESC[33m", "ask", msg)
+                        Denied msg  -> ("\ESC[31m", "deny", msg)
+                        Skipped msg -> ("", "skip", msg)
+                outputStrLn $ "disposition: " ++ color ++ disposition ++ "\ESC[0m"
+                case filter (not . null) (lines reasons) of
+                    [] -> return ()
+                    rs -> do
+                        outputStrLn "reasons:"
+                        mapM_ (\r -> outputStrLn $ "  " ++ r) rs
+                loop
 
 commentDisposition :: Comment -> Disposition
 commentDisposition c = case cCode c of

@@ -71,6 +71,7 @@ executable shellsafety
       base,
       bytestring,
       directory,
+      haskeline,
       text,
       time,
       ShellSafety
