@@ -45,7 +45,7 @@ import ShellSafety.Checker (checkSafety)
 import ShellSafety.Interface (TokenComment(..), Comment(..), newParseSpec, ParseSpec(..), newSystemInterface, SystemInterface, ParseResult(..), Shell(..))
 import ShellSafety.Parser (parseScript)
 import ShellSafety.Analysis (runSafetyM)
-import ShellSafety.Policy (Disposition(..), parsePolicy, policyShell)
+import ShellSafety.Policy (Disposition(..), Policy, parsePolicy, policyShell)
 
 import Control.Exception (catch, IOException)
 import Data.Aeson (Value(..), decode)
@@ -60,8 +60,8 @@ import System.Directory (getHomeDirectory, doesFileExist, getCurrentDirectory)
 import System.Environment (getArgs, lookupEnv)
 import Data.Version (showVersion)
 import Paths_ShellSafety (version)
-import System.Exit (exitSuccess)
-import System.IO (hPutStrLn, stderr, withFile, IOMode(..), hPutStrLn)
+import System.Exit (exitSuccess, exitFailure)
+import System.IO (hPutStrLn, stderr, withFile, IOMode(..), hPutStrLn, hFlush, stdout, hIsEOF, stdin)
 
 shellForExecutable :: String -> Maybe Shell
 shellForExecutable name =
@@ -112,6 +112,13 @@ helpText = unlines
     , "         }"
     , "       }"
     , ""
+    , "INTERACTIVE MODE"
+    , ""
+    , "  shellsafety -i"
+    , ""
+    , "  Opens a REPL where you can type shell commands and see how the policy"
+    , "  would classify them (allow, ask, deny) with reasons."
+    , ""
     , "MANUAL TESTING"
     , ""
     , "  Test a denied command:"
@@ -136,6 +143,9 @@ main = do
     case args of
         (flag:_) | flag `elem` ["--version", "-V"] -> do
             putStrLn $ "shellsafety " ++ showVersion version
+            exitSuccess
+        (flag:_) | flag `elem` ["--interactive", "-i"] -> do
+            runInteractive
             exitSuccess
         (flag:_) | flag `elem` ["--help", "-h"] -> do
             putStr helpText
@@ -188,31 +198,80 @@ extractCommand input = do
     return $ T.unpack cmd
 
 check :: String -> String -> IO (Outcome, String)
-check policyText cmd = do
-    let script = "#!/bin/bash\n" ++ cmd ++ "\n"
+check policyText cmd =
     case parsePolicy policyText of
         Left err -> do
             hPutStrLn stderr $ "shellsafety: invalid policy: " ++ err
             return (Skipped ("invalid policy: " ++ err), "")
-        Right policy -> do
-            let shellOverride = policyShell policy >>= shellForExecutable
-            let pSpec = newParseSpec {
-                    psFilename = "script",
-                    psScript = script,
-                    psShellTypeOverride = shellOverride
-                }
-            pr <- parseScript (newSystemInterface :: SystemInterface IO) pSpec
-            case prRoot pr of
-                Nothing -> return (Skipped "parse failed", "")
-                Just root -> do
-                    let comments = runSafetyM root (checkSafety policy)
-                    let worst = maximum (Allow : map (commentDisposition . tcComment) comments)
-                    let relevant = filter ((== worst) . commentDisposition . tcComment) comments
-                    let messages = unlines $ map formatComment relevant
-                    case worst of
-                        Allow -> return (Allowed messages, "")
-                        Ask   -> return (Asked messages, askJson messages)
-                        Deny  -> return (Denied messages, denyJson messages)
+        Right policy -> checkWithPolicy policy cmd
+
+checkWithPolicy :: Policy -> String -> IO (Outcome, String)
+checkWithPolicy policy cmd = do
+    let script = "#!/bin/bash\n" ++ cmd ++ "\n"
+    let shellOverride = policyShell policy >>= shellForExecutable
+    let pSpec = newParseSpec {
+            psFilename = "script",
+            psScript = script,
+            psShellTypeOverride = shellOverride
+        }
+    pr <- parseScript (newSystemInterface :: SystemInterface IO) pSpec
+    case prRoot pr of
+        Nothing -> return (Skipped "parse failed", "")
+        Just root -> do
+            let comments = runSafetyM root (checkSafety policy)
+            let worst = maximum (Allow : map (commentDisposition . tcComment) comments)
+            let relevant = filter ((== worst) . commentDisposition . tcComment) comments
+            let messages = unlines $ map formatComment relevant
+            case worst of
+                Allow -> return (Allowed messages, "")
+                Ask   -> return (Asked messages, askJson messages)
+                Deny  -> return (Denied messages, denyJson messages)
+
+runInteractive :: IO ()
+runInteractive = do
+    policyPath <- findPolicyFile
+    case policyPath of
+        Nothing -> do
+            hPutStrLn stderr "shellsafety: no policy file found"
+            exitFailure
+        Just path -> do
+            policyResult <- (Right <$> readFile path)
+                `catch` (\e -> return $ Left (show (e :: IOException)))
+            case policyResult of
+                Left err -> do
+                    hPutStrLn stderr $ "shellsafety: failed to read policy: " ++ err
+                    exitFailure
+                Right policyText -> case parsePolicy policyText of
+                    Left err -> do
+                        hPutStrLn stderr $ "shellsafety: invalid policy: " ++ err
+                        exitFailure
+                    Right policy -> interactiveLoop policy
+
+interactiveLoop :: Policy -> IO ()
+interactiveLoop policy = do
+    eof <- hIsEOF stdin
+    if eof
+        then putStrLn ""
+        else do
+            putStr "$ "
+            hFlush stdout
+            cmd <- getLine
+            if null cmd
+                then interactiveLoop policy
+                else do
+                    (outcome, _) <- checkWithPolicy policy cmd
+                    let (disposition, reasons) = case outcome of
+                            Allowed msg -> ("allow", msg)
+                            Asked msg   -> ("ask", msg)
+                            Denied msg  -> ("deny", msg)
+                            Skipped msg -> ("skip", msg)
+                    putStrLn $ "disposition: " ++ disposition
+                    case filter (not . null) (lines reasons) of
+                        [] -> return ()
+                        rs -> do
+                            putStrLn "reasons:"
+                            mapM_ (\r -> putStrLn $ "  " ++ r) rs
+                    interactiveLoop policy
 
 commentDisposition :: Comment -> Disposition
 commentDisposition c = case cCode c of

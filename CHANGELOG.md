@@ -2,6 +2,14 @@
 
 All notable changes to ShellSafety will be documented in this file.
 
+## [0.3.4] - 2026-04-08
+
+### Added
+- `--version` / `-V` flag to print the current version and exit.
+- Interactive REPL mode (`--interactive` / `-i`): type shell commands and see how
+  the policy classifies them (allow, ask, deny) with reasons. Useful for testing
+  and iterating on policy rules.
+
 ## [0.3.3] - 2026-04-07
 
 ### Changed

@@ -78,6 +78,22 @@ With `"allow": ["Bash(*)"]`, all Bash commands pass through the permission syste
 without prompting. The hook acts as the sole safety gate: commands that pass the
 policy run immediately; commands that violate it are denied before execution.
 
+### Try it out
+
+Test commands interactively against your policy:
+
+```sh
+shellsafety -i
+$ ls -la
+disposition: allow
+reasons:
+  SC4000: Command 'ls' classified as ReadOnly, allowed by safety policy (allow effect:readonly)
+$ rm -rf /
+disposition: deny
+reasons:
+  SC4001: Command 'rm' classified as Mutating, denied by safety policy
+```
+
 ### Interactive mode (macOS)
 
 For an interactive experience where denied commands pop up a native dialog
