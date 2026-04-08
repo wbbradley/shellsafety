@@ -58,6 +58,8 @@ import Data.Time.Format (formatTime, defaultTimeLocale)
 import Data.Time.LocalTime (getZonedTime)
 import System.Directory (getHomeDirectory, doesFileExist, getCurrentDirectory)
 import System.Environment (getArgs, lookupEnv)
+import Data.Version (showVersion)
+import Paths_ShellSafety (version)
 import System.Exit (exitSuccess)
 import System.IO (hPutStrLn, stderr, withFile, IOMode(..), hPutStrLn)
 
@@ -132,6 +134,9 @@ main :: IO ()
 main = do
     args <- getArgs
     case args of
+        (flag:_) | flag `elem` ["--version", "-V"] -> do
+            putStrLn $ "shellsafety " ++ showVersion version
+            exitSuccess
         (flag:_) | flag `elem` ["--help", "-h"] -> do
             putStr helpText
             exitSuccess
