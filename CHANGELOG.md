@@ -2,6 +2,11 @@
 
 All notable changes to ShellSafety will be documented in this file.
 
+## [0.3.3] - 2026-04-07
+
+### Changed
+- Renamed default branch from `master` to `main`.
+
 ## [0.3.2] - 2026-04-07
 
 ### Added
