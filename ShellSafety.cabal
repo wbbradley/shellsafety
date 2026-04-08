@@ -1,5 +1,5 @@
 Name:             ShellSafety
-Version:          0.3.4
+Version:          0.3.5
 Synopsis:         Safety gate for AI agent shell command execution
 License:          GPL-3
 License-file:     LICENSE
