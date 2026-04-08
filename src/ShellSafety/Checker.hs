@@ -165,7 +165,13 @@ prop_curlPostDenied = verifySafety defaultDenyPolicy "curl -d data https://examp
 -- Phase 4: find action classification
 prop_findSimpleAllowed = verifySafetyNot defaultDenyPolicy "find . -name '*.log'"
 prop_findDeleteDenied = verifySafety defaultDenyPolicy "find . -name '*.tmp' -delete"
-prop_findExecDenied = verifySafety defaultDenyPolicy "find . -exec rm {} \\;"
+prop_findExecRmDenied = verifySafety defaultDenyPolicy "find . -exec rm {} \\;"
+prop_findExecGrepAllowed = verifySafetyNot defaultDenyPolicy "find . -exec grep pattern {} \\;"
+prop_findExecCurlDenied = verifySafety defaultDenyPolicy "find . -exec curl -d data {} \\;"
+prop_findExecUnknownDenied = verifySafety defaultDenyPolicy "find . -exec my-cmd {} \\;"
+prop_findExecShDenied = verifySafety defaultDenyPolicy "find . -exec sh -c 'echo {}' \\;"
+prop_findMultiExecDenied = verifySafety defaultDenyPolicy "find . -exec cat {} \\; -exec rm {} \\;"
+prop_findExecDeleteDenied = verifySafety defaultDenyPolicy "find . -exec chmod 644 {} \\; -delete"
 
 -- Phase 4: tee
 prop_teeDenied = verifySafety defaultDenyPolicy "tee output.log"

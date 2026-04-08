@@ -55,7 +55,7 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text as T
 import Data.Maybe (fromMaybe)
 import Data.Time.Format (formatTime, defaultTimeLocale)
-import Data.Time.Clock (getCurrentTime)
+import Data.Time.LocalTime (getZonedTime)
 import System.Directory (getHomeDirectory, doesFileExist, getCurrentDirectory)
 import System.Environment (getArgs, lookupEnv)
 import System.Exit (exitSuccess)
@@ -250,8 +250,8 @@ logInvocation :: BL.ByteString -> Maybe String -> Outcome -> IO ()
 logInvocation input cmd outcome = do
     home <- getHomeDirectory
     cwd <- getCurrentDirectory
-    now <- getCurrentTime
-    let ts = formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S%QZ" now
+    now <- getZonedTime
+    let ts = formatTime defaultTimeLocale "%Y-%m-%dT%H:%M:%S%Q%z" now
     let (decision, reasons) = case outcome of
             Allowed msg  -> ("allow", toReasons msg)
             Asked msg    -> ("ask", toReasons msg)

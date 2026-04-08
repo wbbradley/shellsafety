@@ -2,6 +2,22 @@
 
 All notable changes to ShellSafety will be documented in this file.
 
+## [0.3.2] - 2026-04-07
+
+### Added
+- Recursive classification for `find -exec` clauses: `find -exec <cmd>` now
+  delegates to the inner command's classifier instead of always being
+  `Executing`. For example, `find -exec grep pattern {} \;` is now `ReadOnly`,
+  `find -exec rm {} \;` is `Mutating`, and `find -exec curl -d data {} \;` is
+  `NetworkOut`.
+- Multiple `-exec` clause handling: when `find` has multiple `-exec` clauses,
+  the worst (most restrictive) effect wins.
+- Diagnostic messages for `find -exec` now show the inner command name (e.g.,
+  `Command 'rm' (via find)`), matching the existing `xargs` behavior.
+
+### Changed
+- Log timestamps now use local time with timezone offset instead of UTC.
+
 ## [0.3.1] - 2026-04-06
 
 ### Added

@@ -27,7 +27,8 @@ module ShellSafety.Effects (
     , runTests  -- STRIP
     ) where
 
-import Data.List (isPrefixOf)
+import Data.List (isPrefixOf, maximumBy)
+import Data.Ord (comparing)
 import qualified Data.Map.Strict as M
 import Test.QuickCheck
 
@@ -101,8 +102,7 @@ executingCommands = map (\c -> (c, Executing))
     [ "bash", "csh", "dash", "env", "eval", "exec", "expect", "fish"
     , "ksh", "make", "nawk", "perl", "php", "python", "python3"
     , "ruby", "sh", "sudo", "su", "tcsh", "zsh"
-    -- find is Executing because of -exec
-    , "find"
+    -- find is handled by classifyFind
     -- Docker runs arbitrary commands
     , "docker", "podman"
     -- xargs is handled by classifyXargs but kept here as a fallback
@@ -124,7 +124,7 @@ builtinEffects = M.fromList allPairs
 classifyCommand :: String -> [String] -> (String, Effect)
 classifyCommand "git"   args = ("git",  classifyGit args)
 classifyCommand "curl"  args = ("curl", classifyCurl args)
-classifyCommand "find"  args = ("find", classifyFind args)
+classifyCommand "find"  args = classifyFind args
 classifyCommand "xargs" args = classifyXargs args
 classifyCommand cmd     _    = (cmd,    M.findWithDefault Unknown cmd builtinEffects)
 
@@ -160,15 +160,28 @@ classifyCurl args
         , "--request"
         ]
 
-classifyFind :: [String] -> Effect
-classifyFind [] = Executing
-classifyFind args
-    | hasExec   = Executing
-    | hasDelete = Mutating
-    | otherwise = ReadOnly
-  where
-    hasExec   = any (`elem` ["-exec", "-execdir", "-ok", "-okdir"]) args
-    hasDelete = "-delete" `elem` args
+classifyFind :: [String] -> (String, Effect)
+classifyFind [] = ("find", Executing)
+classifyFind args =
+    let execClauses = extractExecClauses args
+        hasDelete = "-delete" `elem` args
+        deleteEffect = if hasDelete then [("find", Mutating)] else []
+        execEffects = map classifyExecClause execClauses ++ deleteEffect
+    in case execEffects of
+        [] -> ("find", ReadOnly)
+        es -> maximumBy (comparing snd) es
+
+extractExecClauses :: [String] -> [[String]]
+extractExecClauses [] = []
+extractExecClauses (x:xs)
+    | x `elem` ["-exec", "-execdir", "-ok", "-okdir"] =
+        let (clause, rest) = span (\a -> a /= ";" && a /= "+") xs
+        in clause : extractExecClauses (drop 1 rest)
+    | otherwise = extractExecClauses xs
+
+classifyExecClause :: [String] -> (String, Effect)
+classifyExecClause [] = ("find", Executing)
+classifyExecClause (cmd:rest) = classifyCommand cmd rest
 
 classifyXargs :: [String] -> (String, Effect)
 classifyXargs args = case stripXargsOpts args of
@@ -273,8 +286,27 @@ prop_curlFormNetworkOut = snd (classifyCommand "curl" ["-F", "file=@f", "http://
 -- Find argument-aware classification
 prop_findSimpleReadOnly = snd (classifyCommand "find" [".", "-name", "*.log"]) == ReadOnly
 prop_findDeleteMutating = snd (classifyCommand "find" [".", "-name", "*.tmp", "-delete"]) == Mutating
-prop_findExecExecuting = snd (classifyCommand "find" [".", "-exec", "rm", "{}", ";"]) == Executing
+prop_findExecRmMutating = snd (classifyCommand "find" [".", "-exec", "rm", "{}", ";"]) == Mutating
 prop_findNoArgsExecuting = snd (classifyCommand "find" []) == Executing
+
+-- Find effective name tests
+prop_findExecRmName = fst (classifyCommand "find" [".", "-exec", "rm", "{}", ";"]) == "rm"
+prop_findSimpleName = fst (classifyCommand "find" [".", "-name", "*.log"]) == "find"
+prop_findExecGrepName = fst (classifyCommand "find" [".", "-exec", "grep", "pattern", "{}", ";"]) == "grep"
+
+-- Find recursive classification
+prop_findExecGrepReadOnly = snd (classifyCommand "find" [".", "-exec", "grep", "pattern", "{}", ";"]) == ReadOnly
+prop_findExecCurlNetworkOut = snd (classifyCommand "find" [".", "-exec", "curl", "-d", "data", "{}", ";"]) == NetworkOut
+prop_findExecShExecuting = snd (classifyCommand "find" [".", "-exec", "sh", "-c", "echo {}", ";"]) == Executing
+
+-- Find multiple exec clauses: worst effect wins
+prop_findMultiExec = snd (classifyCommand "find" [".", "-exec", "cat", "{}", ";", "-exec", "rm", "{}", ";"]) == Mutating
+
+-- Find -exec + -delete coexistence
+prop_findExecChmodDelete = snd (classifyCommand "find" [".", "-exec", "chmod", "644", "{}", ";", "-delete"]) == Mutating
+
+-- Find unknown inner command
+prop_findExecUnknown = snd (classifyCommand "find" [".", "-exec", "my-cmd", "{}", ";"]) == Unknown
 
 -- Tee
 prop_teeMutating = snd (classifyCommand "tee" ["output.log"]) == Mutating

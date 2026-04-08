@@ -560,6 +560,11 @@ getCommandNameAndToken direct t = fromMaybe (Nothing, t) $ do
                     opts <- getOpts (False, False) "0oprtxE:I:J:L:P:R:S:d:n:s:" longOpts args
                     (_, (t, _)) <- find (null . fst) opts
                     return t
+                "find" -> do
+                    let execFlags = ["-exec", "-execdir", "-ok", "-okdir"]
+                    (_, t) <- find (\(prev, _) -> getLiteralString prev `elem` map Just execFlags)
+                                   (zip args (drop 1 args))
+                    return t
                 _ -> fail ""
 
 -- If a command substitution is a single command, get its name.
