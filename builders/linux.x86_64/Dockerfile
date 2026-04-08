@@ -11,7 +11,7 @@ ENV TARGETNAME=linux.x86_64
 
 # Install GHC and cabal
 USER root
-RUN apk add ghc cabal g++ libffi-dev curl bash gmp gmp-static
+RUN apk add ghc cabal g++ libffi-dev curl bash gmp gmp-static ncurses-static ncurses-dev
 
 # Cabal has failed to cache if options are not specified on the command line,
 # so do that explicitly.
