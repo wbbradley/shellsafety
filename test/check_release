@@ -78,9 +78,9 @@ then
   fail "Current tag is not annotated (required for Snap)."
 fi
 
-if [[ "$(git tag --points-at master)" != "$current" ]]
+if [[ "$(git tag --points-at main)" != "$current" ]]
 then
-  fail "You are not on master"
+  fail "You are not on main"
 fi
 
 if [[ $(git log -1 --pretty=%B) != "Stable version "* ]]
