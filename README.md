@@ -87,11 +87,11 @@ shellsafety -i
 shellsafety> ls -la
 disposition: allow
 reasons:
-  SC4000: Command 'ls' classified as ReadOnly, allowed by safety policy (allow effect:readonly)
+  Command 'ls' classified as ReadOnly, allowed by safety policy (allow effect:readonly)
 shellsafety> rm -rf /
 disposition: deny
 reasons:
-  SC4001: Command 'rm' classified as Mutating, denied by safety policy
+  Command 'rm' classified as Mutating, denied by safety policy
 ```
 
 Interactive mode supports readline editing (arrow keys, Ctrl-A/E/K) and command
@@ -149,7 +149,7 @@ pipelines, the most conservative (highest) effect wins.
 | `readonly` | Only reads data, no side effects | `cat`, `ls`, `grep`, `wc`, `git status` |
 | `mutating` | Modifies files or system state | `rm`, `mv`, `chmod`, `git commit`, `apt install` |
 | `network_out` | Sends data over the network | `curl -d`, `ssh`, `wget`, `git push` |
-| `executing` | Runs arbitrary commands | `bash`, `sudo`, `python`, `find -exec` |
+| `executing` | Runs arbitrary commands | `sudo`, `python`, `eval`, `perl` |
 | `dynamic` | Command name determined at runtime | `$(prog)`, `` `prog` ``, `$CMD` |
 | `unknown` | Command not in the built-in database | Any unrecognized command |
 
@@ -159,6 +159,7 @@ Some commands are classified context-sensitively based on their arguments:
 - **curl**: `curl <url>` (GET) is ReadOnly, `curl -d data <url>` is NetworkOut
 - **find**: `find . -name '*.log'` is ReadOnly, `find -exec grep pattern` is ReadOnly (classified by the inner command), `find -exec rm` is Mutating, `find -delete` is Mutating
 - **xargs**: `xargs grep pattern` is ReadOnly (classified by the utility command), bare `xargs` is ReadOnly (defaults to `/bin/echo`)
+- **sh/bash/dash/ksh/zsh**: `sh -c 'cat file'` is ReadOnly (classified by the inner script), `bash -c 'rm file'` is Mutating, bare `sh` or `sh script.sh` is Executing
 
 ### Output Redirection
 
@@ -166,18 +167,6 @@ When a command has output redirection (`>`, `>>`, `>|`) to a real file, its
 effect is upgraded to at least `mutating`. For example, `echo hello > file.txt`
 is classified as Mutating even though `echo` alone is ReadOnly. Redirections to
 `/dev/null` are excluded from this upgrade.
-
-## Diagnostic Codes
-
-| Code | Disposition | Description |
-|------|-------------|-------------|
-| SC4000 | allow | Command allowed by policy (info-level, not emitted to hook) |
-| SC4001 | deny | Known command denied by policy |
-| SC4002 | deny | Unknown command denied by default policy |
-| SC4003 | ask | Known command requires confirmation |
-| SC4004 | ask | Unknown command requires confirmation |
-| SC4005 | deny | Dynamic command denied by policy |
-| SC4006 | ask | Dynamic command requires confirmation |
 
 ## Environment Variables
 

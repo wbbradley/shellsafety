@@ -167,7 +167,7 @@ prop_findExecRmDenied = verifySafety defaultDenyPolicy "find . -exec rm {} \\;"
 prop_findExecGrepAllowed = verifySafetyNot defaultDenyPolicy "find . -exec grep pattern {} \\;"
 prop_findExecCurlDenied = verifySafety defaultDenyPolicy "find . -exec curl -d data {} \\;"
 prop_findExecUnknownDenied = verifySafety defaultDenyPolicy "find . -exec my-cmd {} \\;"
-prop_findExecShDenied = verifySafety defaultDenyPolicy "find . -exec sh -c 'echo {}' \\;"
+prop_findExecShEchoAllowed = verifySafetyNot defaultDenyPolicy "find . -exec sh -c 'echo {}' \\;"
 prop_findMultiExecDenied = verifySafety defaultDenyPolicy "find . -exec cat {} \\; -exec rm {} \\;"
 prop_findExecDeleteDenied = verifySafety defaultDenyPolicy "find . -exec chmod 644 {} \\; -delete"
 
@@ -235,6 +235,16 @@ prop_xargsMvDenied = verifySafety defaultDenyPolicy "echo files | xargs -0 -I {}
 prop_xargsCurlNoDenied = verifySafety defaultDenyPolicy "echo urls | xargs curl"
 prop_xargsBareAllowed = verifySafetyNot defaultDenyPolicy "echo hello | xargs"
 prop_xargsComplexFlagsUnknown = verifySafety defaultDenyPolicy "echo | xargs -I XX -n 3 my-cmd XX"
+
+-- Shell -c integration tests
+prop_shCatAllowed = verifySafetyNot defaultDenyPolicy "sh -c 'cat file'"
+prop_shRmDenied = verifySafety defaultDenyPolicy "sh -c 'rm file'"
+prop_bashGrepAllowed = verifySafetyNot defaultDenyPolicy "bash -c 'grep pattern file'"
+prop_bashCurlPostDenied = verifySafety defaultDenyPolicy "bash -c 'curl -d data url'"
+prop_findExecShCatAllowed = verifySafetyNot defaultDenyPolicy "find . -exec sh -c 'cat {}' \\;"
+prop_findExecShRmDenied = verifySafety defaultDenyPolicy "find . -exec sh -c 'rm {}' \\;"
+prop_xargsShCatAllowed = verifySafetyNot defaultDenyPolicy "echo files | xargs sh -c 'cat file'"
+prop_xargsShRmDenied = verifySafety defaultDenyPolicy "echo files | xargs sh -c 'rm file'"
 
 return []
 runTests = $quickCheckAll

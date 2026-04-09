@@ -2,6 +2,35 @@
 
 All notable changes to ShellSafety will be documented in this file.
 
+## [0.4.0] - 2026-04-08
+
+### Breaking Changes
+- Replaced `TokenComment`-based analysis output with new `SafetyResult` type
+  carrying `Disposition` and message directly. Removed `makeComment`,
+  `addComment`, `warn`, `info` from `ShellSafety.Analysis`; replaced with
+  single `emit` function.
+- Removed SC4000-SC4006 numeric diagnostic codes. Disposition (Allow/Ask/Deny)
+  is now a first-class field on `SafetyResult`.
+- `classifyCommand` for sh/bash/dash/ksh/zsh with `-c` now recursively parses
+  and classifies the inner script rather than returning a blanket `Executing`.
+
+### Added
+- Shell `-c` classification: `sh -c 'cat file'` is now classified as ReadOnly
+  instead of Executing. Supports sh, bash, dash, ksh, and zsh. Handles combined
+  flags (`-exc`), `-o`/`+o` options, `--` separators, nested shells, and
+  multi-command scripts.
+- Recursive shell classification integrates with `find -exec sh -c ...` and
+  `xargs sh -c ...` pipelines.
+- `NFData` instance for `Disposition` and `SafetyResult`.
+
+### Changed
+- Parse failures now return Ask disposition with a diagnostic message instead of
+  silently allowing execution.
+
+### Fixed
+- Alpine Docker builder now includes `ncurses-static` for haskeline/terminfo
+  static linking.
+
 ## [0.3.5] - 2026-04-08
 
 ### Added

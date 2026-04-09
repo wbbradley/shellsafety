@@ -18,6 +18,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -}
 
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE TemplateHaskell #-}
 module ShellSafety.Effects (
     Effect(..),
@@ -27,10 +28,18 @@ module ShellSafety.Effects (
     , runTests  -- STRIP
     ) where
 
+import Control.Monad.Identity (runIdentity)
+import Control.Monad.Writer (execWriter, tell, Writer)
 import Data.List (isPrefixOf, maximumBy)
+import Data.Maybe (mapMaybe)
 import Data.Ord (comparing)
 import qualified Data.Map.Strict as M
 import Test.QuickCheck
+
+import ShellSafety.AST (Token, pattern T_SimpleCommand, doAnalysis)
+import ShellSafety.ASTLib (getLiteralString)
+import ShellSafety.Interface (newParseSpec, ParseSpec(..), ParseResult(..), mockedSystemInterface, Shell(..))
+import ShellSafety.Parser (parseScript)
 
 -- | Effect classification for shell commands.
 -- Constructor order matters: ReadOnly < Mutating < NetworkOut < Executing < Dynamic < Unknown
@@ -99,9 +108,9 @@ networkOutCommands = map (\c -> (c, NetworkOut))
 
 executingCommands :: [(String, Effect)]
 executingCommands = map (\c -> (c, Executing))
-    [ "bash", "csh", "dash", "env", "eval", "exec", "expect", "fish"
-    , "ksh", "make", "nawk", "perl", "php", "python", "python3"
-    , "ruby", "sh", "sudo", "su", "tcsh", "zsh"
+    [ "csh", "env", "eval", "exec", "expect", "fish"
+    , "make", "nawk", "perl", "php", "python", "python3"
+    , "ruby", "sudo", "su", "tcsh"
     -- find is handled by classifyFind
     -- Docker runs arbitrary commands
     , "docker", "podman"
@@ -126,6 +135,11 @@ classifyCommand "git"   args = ("git",  classifyGit args)
 classifyCommand "curl"  args = ("curl", classifyCurl args)
 classifyCommand "find"  args = classifyFind args
 classifyCommand "xargs" args = classifyXargs args
+classifyCommand "sh"    args = classifyShell Sh   "sh"   args
+classifyCommand "bash"  args = classifyShell Bash "bash" args
+classifyCommand "dash"  args = classifyShell Dash "dash" args
+classifyCommand "ksh"   args = classifyShell Ksh  "ksh"  args
+classifyCommand "zsh"   args = classifyShell Bash "zsh"  args  -- approximate zsh as bash
 classifyCommand cmd     _    = (cmd,    M.findWithDefault Unknown cmd builtinEffects)
 
 classifyGit :: [String] -> Effect
@@ -217,6 +231,62 @@ stripXargsShort (c:cs) rest
         else stripXargsOpts rest
     | otherwise = stripXargsShort cs rest
 
+-- Shell -c classification
+
+classifyShell :: Shell -> String -> [String] -> (String, Effect)
+classifyShell shellType shellName args =
+    case extractShellScript args of
+        Nothing     -> (shellName, Executing)
+        Just script -> classifyScript shellName shellType script
+
+-- | Extract the script string from shell arguments like -c 'script'.
+-- Handles POSIX shell options: -e, -x, -u, -v, -n, -f, -b, -C, -a, -h, -p
+-- Handles -o/+o taking an argument, combined flags like -exc, and --.
+extractShellScript :: [String] -> Maybe String
+extractShellScript = go
+  where
+    go [] = Nothing
+    go ("--":_) = Nothing  -- rest is script file or positional args
+    go (('-':flags):rest) = handleFlags flags rest
+    go (('+':'o':_):rest) = go (drop 1 rest)  -- +o option takes arg
+    go _ = Nothing  -- non-flag argument = script filename
+
+    handleFlags [] rest = go rest
+    handleFlags ('c':_) (script:_) = Just script
+    handleFlags ('c':_) [] = Nothing  -- -c with no script arg
+    handleFlags ('o':_) rest = go (drop 1 rest)  -- -o takes next arg
+    handleFlags (_:cs) rest = handleFlags cs rest  -- skip other flags
+
+-- | Parse a shell script string and classify by the worst effect of its commands.
+classifyScript :: String -> Shell -> String -> (String, Effect)
+classifyScript shellName shellType script =
+    let spec = newParseSpec {
+            psScript = script,
+            psShellTypeOverride = Just shellType
+        }
+        result = runIdentity $ parseScript (mockedSystemInterface []) spec
+    in case prRoot result of
+        Nothing -> (shellName, Executing)  -- parse failure: conservative
+        Just root ->
+            let commands = extractCommands root
+            in case commands of
+                [] -> (shellName, ReadOnly)  -- empty script
+                _  -> maximumBy (comparing snd) commands
+
+-- | Walk the AST and extract (effectiveName, effect) for each simple command.
+extractCommands :: Token -> [(String, Effect)]
+extractCommands root =
+    execWriter $ doAnalysis collectCommand root
+  where
+    collectCommand :: Token -> Writer [(String, Effect)] ()
+    collectCommand (T_SimpleCommand _ _ (cmdWord:argWords)) =
+        case getLiteralString cmdWord of
+            Just cmdName ->
+                let literalArgs = mapMaybe getLiteralString argWords
+                in tell [classifyCommand cmdName literalArgs]
+            Nothing -> tell [("", Unknown)]
+    collectCommand _ = return ()
+
 -- Tests
 
 prop_classifyReadOnly :: Bool
@@ -297,7 +367,7 @@ prop_findExecGrepName = fst (classifyCommand "find" [".", "-exec", "grep", "patt
 -- Find recursive classification
 prop_findExecGrepReadOnly = snd (classifyCommand "find" [".", "-exec", "grep", "pattern", "{}", ";"]) == ReadOnly
 prop_findExecCurlNetworkOut = snd (classifyCommand "find" [".", "-exec", "curl", "-d", "data", "{}", ";"]) == NetworkOut
-prop_findExecShExecuting = snd (classifyCommand "find" [".", "-exec", "sh", "-c", "echo {}", ";"]) == Executing
+prop_findExecShReadOnly = snd (classifyCommand "find" [".", "-exec", "sh", "-c", "echo {}", ";"]) == ReadOnly
 
 -- Find multiple exec clauses: worst effect wins
 prop_findMultiExec = snd (classifyCommand "find" [".", "-exec", "cat", "{}", ";", "-exec", "rm", "{}", ";"]) == Mutating
@@ -333,6 +403,49 @@ prop_xargsGnuMaxArgs = snd (classifyCommand "xargs" ["--max-args=5", "rm"]) == M
 prop_xargsGnuMaxArgsSpace = snd (classifyCommand "xargs" ["--max-args", "5", "rm"]) == Mutating
 prop_xargsGnuReplace = snd (classifyCommand "xargs" ["--replace", "rm", "{}"]) == Mutating
 prop_xargsGnuVerbose = snd (classifyCommand "xargs" ["--verbose", "cat", "file"]) == ReadOnly
+
+-- Shell -c classification tests
+
+-- Basic classification
+prop_shCatReadOnly = snd (classifyCommand "sh" ["-c", "cat file"]) == ReadOnly
+prop_shCatName = fst (classifyCommand "sh" ["-c", "cat file"]) == "cat"
+prop_shRmMutating = snd (classifyCommand "sh" ["-c", "rm file"]) == Mutating
+prop_shRmName = fst (classifyCommand "sh" ["-c", "rm file"]) == "rm"
+prop_bashCurlNetworkOut = snd (classifyCommand "bash" ["-c", "curl -d data url"]) == NetworkOut
+prop_bashCurlName = fst (classifyCommand "bash" ["-c", "curl -d data url"]) == "curl"
+prop_dashGrepReadOnly = snd (classifyCommand "dash" ["-c", "grep pattern file"]) == ReadOnly
+prop_kshChmodMutating = snd (classifyCommand "ksh" ["-c", "chmod 644 file"]) == Mutating
+prop_zshLsReadOnly = snd (classifyCommand "zsh" ["-c", "ls"]) == ReadOnly
+
+-- Bare/fallback cases
+prop_shNoArgsExecuting = snd (classifyCommand "sh" []) == Executing
+prop_shScriptFileExecuting = snd (classifyCommand "sh" ["script.sh"]) == Executing
+prop_shDashCNoScriptExecuting = snd (classifyCommand "sh" ["-c"]) == Executing
+prop_cshExecuting = snd (classifyCommand "csh" ["-c", "rm file"]) == Executing
+prop_tcshExecuting = snd (classifyCommand "tcsh" ["-c", "rm file"]) == Executing
+prop_fishExecuting = snd (classifyCommand "fish" ["-c", "rm file"]) == Executing
+
+-- Multi-command scripts
+prop_shMultiCmdMutating = snd (classifyCommand "sh" ["-c", "cat file && rm other"]) == Mutating
+prop_shPipeReadOnly = snd (classifyCommand "sh" ["-c", "cat file | grep pattern"]) == ReadOnly
+prop_shSemicolonNetworkOut = snd (classifyCommand "sh" ["-c", "echo hello; curl -d data url"]) == NetworkOut
+
+-- Option handling
+prop_shDashECReadOnly = snd (classifyCommand "sh" ["-e", "-c", "cat file"]) == ReadOnly
+prop_shExcReadOnly = snd (classifyCommand "sh" ["-exc", "cat file"]) == ReadOnly
+prop_bashXECMutating = snd (classifyCommand "bash" ["-x", "-e", "-c", "rm file"]) == Mutating
+prop_shDashDashExecuting = snd (classifyCommand "sh" ["--", "script.sh"]) == Executing
+
+-- Recursive/nested
+prop_shNestedShMutating = snd (classifyCommand "sh" ["-c", "sh -c 'rm file'"]) == Mutating
+prop_shCallingFind = snd (classifyCommand "sh" ["-c", "find . -exec rm {} \\;"]) == Mutating
+prop_shCallingXargs = snd (classifyCommand "sh" ["-c", "echo files | xargs rm"]) == Mutating
+
+-- find/xargs -> sh integration
+prop_findExecShCat = snd (classifyCommand "find" [".", "-exec", "sh", "-c", "cat {}", ";"]) == ReadOnly
+prop_findExecShRm = snd (classifyCommand "find" [".", "-exec", "sh", "-c", "rm {}", ";"]) == Mutating
+prop_xargsShCat = snd (classifyCommand "xargs" ["sh", "-c", "cat file"]) == ReadOnly
+prop_xargsShRm = snd (classifyCommand "xargs" ["sh", "-c", "rm file"]) == Mutating
 
 return []
 runTests = $quickCheckAll
