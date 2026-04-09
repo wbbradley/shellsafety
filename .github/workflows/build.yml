@@ -75,9 +75,35 @@ jobs:
           cd source
           cabal test ${{ matrix.cabal_flags }}
 
+  wait_for_builders:
+    name: Wait for builder images
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for concurrent builder workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Allow time for concurrent workflows to register
+          sleep 5
+          # Check if a builders workflow is running for the same commit
+          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" \
+            --workflow=builders.yml \
+            --commit "$GITHUB_SHA" \
+            --json databaseId,status \
+            --jq '.[] | select(.status != "completed") | .databaseId' \
+            | head -1)
+          if [ -n "$run_id" ]; then
+            echo "Waiting for builders workflow run $run_id..."
+            gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
+          else
+            echo "No in-progress builders workflow found, proceeding."
+          fi
+
   build_source:
     name: Build
-    needs: package_source
+    needs: [package_source, wait_for_builders]
+    if: ${{ !cancelled() && needs.package_source.result == 'success' && needs.wait_for_builders.result != 'failure' }}
     permissions:
       packages: read
     strategy:
