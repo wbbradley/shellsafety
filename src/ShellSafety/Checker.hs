@@ -42,8 +42,7 @@ checkSafety policy t = case t of
 checkLiteralCommand :: Policy -> String -> Token -> [Token] -> Token -> SafetyM ()
 checkLiteralCommand policy cmdName cmdWord argWords sc = do
     let literalArgs = mapMaybe getLiteralString argWords
-    let allLiteral = length literalArgs == length argWords
-    let effectArgs = if allLiteral then literalArgs else []
+    let effectArgs = literalArgs
     let (effectiveName, baseEffect) = classifyCommand cmdName effectArgs
     redirecting <- getClosestCommandM sc
     let hasRedir = maybe False hasOutputRedirection redirecting
@@ -245,6 +244,11 @@ prop_findExecShCatAllowed = verifySafetyNot defaultDenyPolicy "find . -exec sh -
 prop_findExecShRmDenied = verifySafety defaultDenyPolicy "find . -exec sh -c 'rm {}' \\;"
 prop_xargsShCatAllowed = verifySafetyNot defaultDenyPolicy "echo files | xargs sh -c 'cat file'"
 prop_xargsShRmDenied = verifySafety defaultDenyPolicy "echo files | xargs sh -c 'rm file'"
+
+-- Non-literal args should not poison effect classification of literal flags
+prop_findVarPathReadOnly = verifySafetyNot defaultDenyPolicy "find /path/$var -type f"
+prop_findVarPathExecRmDenied = verifySafety defaultDenyPolicy "find $dir -exec rm {} \\;"
+prop_findVarPathGrepPipeAllowed = verifySafetyNot defaultDenyPolicy "find /path/$var -type f | grep foo"
 
 return []
 runTests = $quickCheckAll

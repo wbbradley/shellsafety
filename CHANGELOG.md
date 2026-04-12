@@ -2,6 +2,13 @@
 
 All notable changes to ShellSafety will be documented in this file.
 
+## [0.4.1] - 2026-04-12
+
+### Fixed
+- Commands with non-literal arguments (e.g. `find /path/$var -type f`) no longer
+  incorrectly classified as Executing. Literal flags are now preserved for effect
+  classification even when some arguments contain shell variables or expansions.
+
 ## [0.4.0] - 2026-04-08
 
 ### Breaking Changes
