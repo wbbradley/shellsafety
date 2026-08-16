@@ -1,5 +1,14 @@
 # ShellSafety
 
+```text
+          ,--,
+     _ ___/ /\|
+ ,;'( )__, )  ~
+//  //   '--;
+'   \     | ^
+     ^    ^
+```
+
 ShellSafety is a safety gate for AI agent shell command execution. It parses
 shell commands, classifies their effects (read-only, mutating, network,
 executing, dynamic), and evaluates them against a configurable policy to allow,
