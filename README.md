@@ -1,12 +1,15 @@
 # ShellSafety
 
 ```text
-          ,--,
-     _ ___/ /\|
- ,;'( )__, )  ~
-//  //   '--;
-'   \     | ^
-     ^    ^
+              /\ /\
+         ____/  V  \__
+    ____/             `\__
+  /'                       `.
+ /   ______               __/
+|   /      \_____________/
+ \  \       ||  ||  ||  ||
+  \  \      ||  ||  ||  ||
+  /__/     (__) (__)(__) (__)
 ```
 
 ShellSafety is a safety gate for AI agent shell command execution. It parses
